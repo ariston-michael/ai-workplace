@@ -212,3 +212,30 @@
 @media (prefers-reduced-motion: reduce) { .office-smallAvatar { transition: none; } }
 @media (max-width: 1000px) { .office-jobDeskGrid { grid-template-columns: 1fr; } }
 @media (max-width: 460px) { .office-deskThree { right: 2%; width: 46%; } }
+
+/* --- Free-text intake and simulator controls --- */
+.office-field textarea { font: inherit; font-size: 13px; color: var(--ink); padding: 10px; border: 1px solid #cdd4c5; background: #fffef9; border-radius: 7px; resize: vertical; }
+.office-field textarea:focus-visible { outline: 3px solid #a34f2e; outline-offset: 2px; }
+.office-formActions { display: flex; gap: 10px; align-items: stretch; }
+.office-formActions .office-hireButton { flex: 1; }
+.office-conversation { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.office-conversation li { font-size: 12px; line-height: 1.6; padding: 9px 11px; border-radius: 9px; max-width: 92%; }
+.office-conversation strong { display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
+.office-saidYou { background: #e5edd8; justify-self: end; }
+.office-saidDispatcher { background: #f6e6d6; color: #5c3b22; }
+.office-dispatcherReply { font-size: 12px; line-height: 1.6; padding: 10px 12px; border-radius: 8px; margin: 12px 0 0; }
+.office-reply-info { background: #edf2e5; color: #3f5a34; }
+.office-reply-unsupported { background: #fbf1d9; color: #6b4e0f; border: 1px solid #e6cf98; }
+.office-reply-error { background: #f7dede; color: #8a2424; }
+.office-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; font-size: 10px; color: var(--muted); }
+.office-examples button { border: 1px solid var(--line); background: #f5f6ee; border-radius: 14px; padding: 4px 9px; font-size: 10px !important; color: var(--ink); }
+.office-examples button:hover { background: #e5edd8; }
+.office-jobRequest { font-size: 12px; font-style: italic; color: #4d5c52; margin: 6px 0 0; }
+.office-simControls { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 20px; align-items: start; border: 1px dashed #b6a3e0; background: #faf8ff; border-radius: 14px; padding: 18px 22px; margin-bottom: 24px; }
+.office-simControls h2 { margin: 0; font-size: 16px; font-weight: 550; }
+.office-simControls .office-eyebrow { display: flex; gap: 8px; align-items: center; }
+.office-faults { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.office-faults .office-jobType:has(input:checked) { background: #ece6fb; border-color: #6d4bc4; }
+.office-simNote { color: #5b3fa6; }
+.office-visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 1000px) { .office-simControls { grid-template-columns: 1fr; } .office-faults { grid-template-columns: 1fr; } }

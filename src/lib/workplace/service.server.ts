@@ -33,6 +33,7 @@ import type {
 import { validateLookupRequest, findSupplier, type LookupMode, type LookupResponse, type Supplier } from "../procurement.ts";
 import { SCENARIOS, runScenario } from "../camera-incident.ts";
 import { cameraReport } from "../office-camera-report.ts";
+import { interpretRequest, STATION, type TranscriptLine } from "./intake.ts";
 
 export const WORKSPACE_ID = "demo";
 /** A job still "working" after this long was interrupted (e.g. server restart). */
@@ -139,6 +140,7 @@ export function resetWorkspace(db: Db, ws: string, now: number) {
     db.prepare("DELETE FROM job_events WHERE job_id IN (SELECT id FROM jobs WHERE workspace_id = ?)").run(ws);
     db.prepare("DELETE FROM jobs WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM hires WHERE workspace_id = ?").run(ws);
+    db.prepare("DELETE FROM simulator_settings WHERE workspace_id = ?").run(ws);
     ensureSeeded(db, ws, now);
   });
 }
@@ -151,6 +153,74 @@ export interface SubmitInput {
   clientRequestId: unknown;
   type: unknown;
   input: unknown;
+  /** The user's own words, when the job came from the request field. */
+  request?: string;
+  /** Intake conversation (request, follow-up questions and answers) to record on the job. */
+  conversation?: TranscriptLine[];
+  /** How the Dispatcher understood the request. */
+  understood?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Simulator controls (operator side; never given to a worker as input)
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_CAMERA_FAULT = SCENARIOS[0].id;
+
+export function getCameraFault(db: Db, ws: string): string {
+  const row = db.prepare("SELECT camera_fault FROM simulator_settings WHERE workspace_id = ?").get(ws) as
+    | { camera_fault: string }
+    | undefined;
+  return row && SCENARIOS.some((s) => s.id === row.camera_fault) ? row.camera_fault : DEFAULT_CAMERA_FAULT;
+}
+
+export function setCameraFault(db: Db, ws: string, fault: unknown): Result<{ cameraFault: string }> {
+  const scenario = SCENARIOS.find((s) => s.id === fault);
+  if (!scenario) return fail(400, "UNKNOWN_FAULT", "Choose one of the simulated camera faults.");
+  db.prepare(
+    "INSERT INTO simulator_settings (workspace_id, camera_fault) VALUES (?, ?) ON CONFLICT (workspace_id) DO UPDATE SET camera_fault = excluded.camera_fault",
+  ).run(ws, scenario.id);
+  return { ok: true, cameraFault: scenario.id };
+}
+
+// ---------------------------------------------------------------------------
+// Free-text requests
+// ---------------------------------------------------------------------------
+
+export type RequestOutcome =
+  | { ok: true; kind: "job"; jobId: string; runJobIds: string[]; understood: string }
+  | { ok: true; kind: "follow_up"; question: string; pending: unknown }
+  | { ok: true; kind: "unsupported"; message: string }
+  | { ok: false; status: number; error: ApiError };
+
+/** "What do you need help with?" → job, follow-up question, or "no worker can handle it". */
+export function submitRequest(
+  db: Db,
+  deps: ServiceDeps,
+  ws: string,
+  req: { clientRequestId: unknown; request: unknown; pending?: unknown },
+): RequestOutcome {
+  const interpretation = interpretRequest(req.request, req.pending);
+  switch (interpretation.kind) {
+    case "invalid":
+      return fail(400, "INVALID_REQUEST", interpretation.message);
+    case "unsupported":
+      return { ok: true, kind: "unsupported", message: interpretation.message };
+    case "follow_up":
+      return { ok: true, kind: "follow_up", question: interpretation.question, pending: interpretation.pending };
+    case "ready": {
+      const r = submitJob(db, deps, ws, {
+        clientRequestId: req.clientRequestId,
+        type: interpretation.jobType,
+        input: interpretation.input,
+        request: interpretation.original,
+        conversation: interpretation.transcript,
+        understood: interpretation.understood,
+      });
+      if (!r.ok) return r;
+      return { ok: true, kind: "job", jobId: r.jobId, runJobIds: r.runJobIds, understood: interpretation.understood };
+    }
+  }
 }
 
 export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInput): Result<{ jobId: string; runJobIds: string[] }> {
@@ -167,14 +237,14 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
   if (type === "supplier_lookup") {
     const v = validateLookupRequest(req.input);
     if (!v.ok) return fail(400, v.error.code, v.error.message);
-    input = { partName: v.partName, supplierId: v.supplier.id, supplierName: v.supplier.name };
+    input = { partName: v.partName, supplierId: v.supplier.id, supplierName: v.supplier.name, request: req.request };
     title = `Find “${v.partName}” on ${v.supplier.name}`;
   } else {
-    const scenarioId = (req.input as { scenarioId?: unknown } | null)?.scenarioId;
-    const scenario = SCENARIOS.find((s) => s.id === scenarioId);
-    if (!scenario) return fail(400, "UNKNOWN_SCENARIO", "Choose one of the simulated camera cases.");
-    input = { scenarioId: scenario.id, scenarioTitle: scenario.title };
-    title = `Camera feed stopped at Packing Station 1 (SIMULATED · ${scenario.title.split(" · ")[0]})`;
+    // The job carries only the station. The simulated fault stays in the simulator controls.
+    const station = (req.input as { station?: unknown } | null | undefined)?.station ?? STATION;
+    if (station !== STATION) return fail(400, "UNKNOWN_STATION", `Only ${STATION} has a camera in this demo.`);
+    input = { station: STATION, request: req.request };
+    title = `Camera feed problem at ${STATION} (SIMULATED station)`;
   }
 
   const clientRequestId = req.clientRequestId;
@@ -194,7 +264,12 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
       `INSERT INTO jobs (id, workspace_id, client_request_id, type, title, input, required_skill, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'needs_worker', ?)`,
     ).run(jobId, ws, clientRequestId, type, title, JSON.stringify(input), decision.requiredSkill, now);
-    addEvent(db, jobId, now, "You", `Submitted: ${title}`);
+    if (req.conversation?.length) {
+      for (const line of req.conversation) addEvent(db, jobId, now, line.actor === "You" ? "You" : DISPATCHER.role, line.text);
+    } else {
+      addEvent(db, jobId, now, "You", `Submitted: ${title}`);
+    }
+    if (req.understood) addEvent(db, jobId, now, DISPATCHER.role, `Understood as ${req.understood}`);
     addEvent(db, jobId, now, DISPATCHER.role, decision.note);
 
     if (decision.kind === "assign") {
@@ -328,15 +403,18 @@ export async function runJob(db: Db, deps: ServiceDeps, jobId: string): Promise<
             ? `Ambiguous: ${r.candidates.length || "several"} possible listings on ${r.supplier.name}.`
             : `${r.itemName}: ${r.availabilityText ?? r.availability} at ${r.supplier.name}.`;
       body = { type: "supplier_lookup", result: r };
-    } else if (job.type === "camera_incident" && "scenarioId" in input) {
-      const scenario = SCENARIOS.find((s) => s.id === input.scenarioId);
-      if (!scenario) throw Object.assign(new Error("Unknown simulated case."), { code: "UNKNOWN_SCENARIO" });
-      const incident = runScenario(scenario, scenario.steps.length, startedAt, "Packing Station 1")!;
+    } else if (job.type === "camera_incident") {
+      // The simulated station emits observations for the fault set in the simulator
+      // controls. The Inspector's decisions come only from those observations.
+      const fault = getCameraFault(db, job.workspace_id);
+      const scenario = SCENARIOS.find((s) => s.id === fault)!;
+      const station = "station" in input ? input.station : STATION;
+      const incident = runScenario(scenario, scenario.steps.length, startedAt, station)!;
       const report = cameraReport(incident);
       mode = "simulated";
       outcome = incident.status === "resolved" ? "resolved" : "incident_open";
       summary = incident.status === "resolved" ? "Fresh frame received. Incident resolved." : `Incident still open: ${report.heading}.`;
-      body = { type: "camera_incident", incident };
+      body = { type: "camera_incident", incident, simulatorFault: scenario.id };
     } else {
       throw Object.assign(new Error("Job input does not match its type."), { code: "INVALID_JOB" });
     }
@@ -480,5 +558,6 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
     team,
     jobs,
     marketplace: MARKETPLACE.map((p) => ({ ...p, hired: hireRows.some((h) => h.profile_id === p.id) })),
+    simulator: { cameraFault: getCameraFault(db, ws) },
   };
 }

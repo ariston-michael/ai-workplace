@@ -10,7 +10,9 @@ import {
   recoverJobs,
   resetWorkspace,
   runJob,
+  setCameraFault,
   submitJob,
+  submitRequest,
   STALE_WORKING_MS,
   type ServiceDeps,
 } from "../src/lib/workplace/service.server.ts";
@@ -186,7 +188,8 @@ test("both marketplace hires get separate desks", () => {
 });
 
 test("camera job goes straight to the Quality Inspector with a SIMULATED report", async () => {
-  const r = submitJob(db, deps, WS, { clientRequestId: rid(), type: "camera_incident", input: { scenarioId: "service-stopped-recovers" } });
+  assert.ok(setCameraFault(db, WS, "service-stopped-recovers").ok);
+  const r = submitJob(db, deps, WS, { clientRequestId: rid(), type: "camera_incident", input: {} });
   assert.ok(r.ok);
   assert.deepEqual(r.runJobIds, [r.jobId]);
   await runJob(db, deps, r.jobId);
@@ -196,10 +199,12 @@ test("camera job goes straight to the Quality Inspector with a SIMULATED report"
   assert.equal(j.report?.outcome, "resolved");
   assert.equal(j.report?.demoCostCents, null, "staff are not billed");
   assert.match(j.title, /SIMULATED/);
+  assert.deepEqual(Object.keys(j.input).sort(), ["station"], "the job carries no simulated fault");
 });
 
 test("camera case 1b: restart succeeds, no frame -> report says incident still open", async () => {
-  const r = submitJob(db, deps, WS, { clientRequestId: rid(), type: "camera_incident", input: { scenarioId: "service-stopped-no-frame" } });
+  assert.ok(setCameraFault(db, WS, "service-stopped-no-frame").ok);
+  const r = submitJob(db, deps, WS, { clientRequestId: rid(), type: "camera_incident", input: {} });
   assert.ok(r.ok);
   await runJob(db, deps, r.jobId);
   const j = job(r.jobId);
@@ -209,7 +214,8 @@ test("camera case 1b: restart succeeds, no frame -> report says incident still o
 });
 
 test("camera case 2: camera missing -> technician cable task, no restart", async () => {
-  const r = submitJob(db, deps, WS, { clientRequestId: rid(), type: "camera_incident", input: { scenarioId: "camera-missing" } });
+  assert.ok(setCameraFault(db, WS, "camera-missing").ok);
+  const r = submitJob(db, deps, WS, { clientRequestId: rid(), type: "camera_incident", input: {} });
   assert.ok(r.ok);
   await runJob(db, deps, r.jobId);
   const body = job(r.jobId).report!.body;
@@ -224,7 +230,7 @@ test("invalid input is rejected and creates no job", () => {
   const cases = [
     { clientRequestId: rid(), type: "supplier_lookup", input: { partName: "Pi 5", supplierId: "https://evil.example" } },
     { clientRequestId: rid(), type: "supplier_lookup", input: { partName: "x", supplierId: "adafruit" } },
-    { clientRequestId: rid(), type: "camera_incident", input: { scenarioId: "nope" } },
+    { clientRequestId: rid(), type: "camera_incident", input: { station: "Packing Station 9" } },
     { clientRequestId: rid(), type: "launch_rockets", input: {} },
     { clientRequestId: "bad id!", type: "supplier_lookup", input: { partName: "Pi 5", supplierId: "adafruit" } },
   ];
@@ -295,4 +301,99 @@ test("demo cost bills by the second", () => {
   assert.equal(demoCostCents(600, 90_000), 15);
   assert.equal(demoCostCents(600, 1), 0);
   assert.equal(demoCostCents(null, 90_000), null);
+});
+
+// --- "What do you need help with?" ------------------------------------------
+
+function ask(request: string, pending?: unknown, clientRequestId = rid()) {
+  const r = submitRequest(db, deps, WS, { clientRequestId, request, pending });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+}
+
+test("clear request: matched to supplier research, recommends a hire, approving resumes it", async () => {
+  const r = ask("Find a Raspberry Pi 5 4GB on Adafruit");
+  assert.equal(r.kind, "job");
+  if (r.kind !== "job") return;
+  const j = job(r.jobId);
+  assert.equal(j.status, "needs_worker");
+  assert.equal(j.recommendedProfileId, "procurement_researcher");
+  assert.equal(j.input.request, "Find a Raspberry Pi 5 4GB on Adafruit");
+  assert.ok(j.events.some((e) => e.actor === "You" && e.text === "Find a Raspberry Pi 5 4GB on Adafruit"));
+  assert.ok(j.events.some((e) => /Understood as Supplier research: find “Raspberry Pi 5 4GB” on Adafruit/.test(e.text)));
+
+  const h = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: r.jobId });
+  assert.ok(h.ok);
+  for (const id of h.runJobIds) await runJob(db, deps, id);
+  assert.equal(job(r.jobId).report?.mode, "sample");
+
+  const second = ask("Is the Qwiic cable 100mm in stock at SparkFun?");
+  assert.ok(second.kind === "job");
+  if (second.kind === "job") {
+    assert.deepEqual(second.runJobIds, [second.jobId], "reused hire: runs immediately");
+    assert.equal(job(second.jobId).hireId, h.hireId);
+  }
+  assert.equal(state().team.filter((t) => t.profileId === "procurement_researcher").length, 1);
+});
+
+test("vague request: follow-up first, no job until details arrive", () => {
+  const f = ask("I need a replacement part");
+  assert.equal(f.kind, "follow_up");
+  assert.equal(state().jobs.length, 0);
+  if (f.kind !== "follow_up") return;
+  assert.match(f.question, /Which part do you need, and which supplier/);
+
+  const done = ask("Raspberry Pi 5 4GB on Adafruit", f.pending);
+  assert.equal(done.kind, "job");
+  if (done.kind !== "job") return;
+  const j = job(done.jobId);
+  assert.equal(j.title, "Find “Raspberry Pi 5 4GB” on Adafruit");
+  assert.equal(j.input.request, "I need a replacement part");
+  const texts = j.events.map((e) => `${e.actor}: ${e.text}`);
+  assert.ok(texts.includes("You: I need a replacement part"));
+  assert.ok(texts.some((t) => t.startsWith("Dispatcher: I can have a Procurement Researcher check a supplier.")));
+  assert.ok(texts.includes("You: Raspberry Pi 5 4GB on Adafruit"));
+});
+
+test("unsupported request: explained, no job created", () => {
+  const u = ask("Write a marketing email for our spring launch");
+  assert.equal(u.kind, "unsupported");
+  if (u.kind === "unsupported") assert.match(u.message, /No worker on your team or in the marketplace can handle/);
+  assert.equal(state().jobs.length, 0);
+  assert.equal(state().team.length, 1);
+});
+
+test("camera request: the Inspector gets observations from the simulator-controlled fault only", async () => {
+  assert.ok(setCameraFault(db, WS, "service-stopped-no-frame").ok);
+  const r = ask("The camera feed at Packing Station 1 stopped");
+  assert.ok(r.kind === "job");
+  if (r.kind !== "job") return;
+  assert.deepEqual(r.runJobIds, [r.jobId], "Quality Inspector already on the team");
+  const queued = job(r.jobId);
+  assert.ok(!JSON.stringify(queued.input).includes("service-stopped"), "fault is not in the job input");
+  assert.ok(!queued.title.includes("1b"));
+  await runJob(db, deps, r.jobId);
+  const done = job(r.jobId);
+  assert.equal(done.report?.outcome, "incident_open");
+  assert.ok(done.report?.body.type === "camera_incident" && done.report.body.simulatorFault === "service-stopped-no-frame");
+});
+
+test("simulator fault setting persists, rejects unknown faults, resets with the demo", () => {
+  assert.equal(state().simulator.cameraFault, "service-stopped-recovers");
+  assert.ok(setCameraFault(db, WS, "camera-missing").ok);
+  assert.equal(state().simulator.cameraFault, "camera-missing");
+  assert.equal(setCameraFault(db, WS, "meteor-strike").ok, false);
+  resetWorkspace(db, WS, clock);
+  assert.equal(state().simulator.cameraFault, "service-stopped-recovers");
+});
+
+test("the same request id after a follow-up still creates only one job", () => {
+  const id = "conversation-0001";
+  const f = ask("Find a Raspberry Pi 5 4GB", undefined, id);
+  assert.ok(f.kind === "follow_up");
+  if (f.kind !== "follow_up") return;
+  const a = ask("Adafruit", f.pending, id);
+  const b = ask("Adafruit", f.pending, id);
+  assert.ok(a.kind === "job" && b.kind === "job" && a.jobId === b.jobId);
+  assert.equal(state().jobs.length, 1);
 });

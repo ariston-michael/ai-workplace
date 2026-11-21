@@ -9,12 +9,17 @@ export type ReportMode = "live" | "sample" | "simulated";
 export type ReportOutcome = "found" | "close" | "ambiguous" | "not_found" | "resolved" | "incident_open";
 
 export type JobInput =
-  | { partName: string; supplierId: string; supplierName: string }
-  | { scenarioId: string; scenarioTitle: string };
+  | { partName: string; supplierId: string; supplierName: string; request?: string }
+  | { station: string; request?: string };
 
 export type ReportBody =
   | { type: "supplier_lookup"; result: LookupResult }
-  | { type: "camera_incident"; incident: Incident };
+  | {
+      type: "camera_incident";
+      incident: Incident;
+      /** Fault chosen in the simulator controls. Recorded for the operator; the Inspector never sees it. */
+      simulatorFault?: string;
+    };
 
 export interface HireView {
   id: string;
@@ -75,6 +80,7 @@ export interface WorkplaceState {
   team: HireView[];
   jobs: JobView[];
   marketplace: (WorkerProfile & { hired: boolean })[];
+  simulator: { cameraFault: string };
 }
 
 export interface ApiError {

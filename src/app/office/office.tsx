@@ -4,14 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./office.css";
 import { CameraIncidentReport } from "./repair-incident";
 import { SCENARIOS } from "@/lib/camera-incident";
-import type { LookupResult, PublicSupplier } from "@/lib/procurement";
+import type { LookupResult } from "@/lib/procurement";
 import {
   DISPATCHER,
   JOB_TYPES,
   SKILLS,
   formatCost,
   formatRate,
-  type JobType,
   type WorkerProfile,
 } from "@/lib/workplace/catalog";
 import type { HireView, JobStatus, JobView, ReportMode, WorkplaceState } from "@/lib/workplace/types";
@@ -77,7 +76,7 @@ async function api(path: string, body?: unknown): Promise<{ ok: true; state: Wor
   }
 }
 
-export default function Office({ suppliers }: { suppliers: PublicSupplier[] }) {
+export default function Office() {
   const [state, setState] = useState<WorkplaceState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -122,13 +121,17 @@ export default function Office({ suppliers }: { suppliers: PublicSupplier[] }) {
     completedRef.current = new Set(done.map(j => j.id));
   }, [state]);
 
-  async function submitJob(type: JobType, input: unknown, clientRequestId: string): Promise<string | null> {
-    const r = await api("/api/workplace/jobs", { clientRequestId, type, input });
-    if (!r.ok) return r.error.message;
+  function onRequestReply(r: RequestReply) {
+    if (!r.ok || r.kind !== "job") return;
     setState(r.state);
-    const job = r.state.jobs[0];
+    const job = r.state.jobs.find(j => j.id === r.jobId);
     setAnnouncement(job?.status === "needs_worker" ? "Dispatcher: nobody on the team has this skill. Review the recommended hire." : `Dispatcher assigned the job to ${job?.hireRole}.`);
-    return null;
+  }
+
+  async function setFault(cameraFault: string) {
+    const r = await api("/api/workplace/simulator", { cameraFault });
+    if (r.ok) { setState(r.state); setAnnouncement(`SIMULATED camera fault set: ${SCENARIOS.find(sc => sc.id === cameraFault)?.title}.`); }
+    else setAnnouncement(r.error.message);
   }
 
   async function hire(profileId: string, jobId?: string) {
@@ -180,7 +183,7 @@ export default function Office({ suppliers }: { suppliers: PublicSupplier[] }) {
 
         <section className="office-incident office-jobDesk" aria-labelledby="jobs-title">
           <div className="office-jobDeskGrid">
-            <JobForm suppliers={suppliers} onSubmit={submitJob} disabled={!state} />
+            <RequestForm onReply={onRequestReply} disabled={!state} />
             <div>
               <h2 id="jobs-title" className="office-jobsTitle">Jobs and reports</h2>
               {!state ? <p className="office-muted">Loading saved workspace…</p>
@@ -189,6 +192,8 @@ export default function Office({ suppliers }: { suppliers: PublicSupplier[] }) {
             </div>
           </div>
         </section>
+
+        {state && <SimulatorControls fault={state.simulator.cameraFault} onChange={setFault} />}
 
         <div className="office-layout">
           <section className="office-officeCard" aria-labelledby="floor-title">
@@ -265,67 +270,118 @@ export default function Office({ suppliers }: { suppliers: PublicSupplier[] }) {
   );
 }
 
-function JobForm({ suppliers, onSubmit, disabled }: { suppliers: PublicSupplier[]; onSubmit: (type: JobType, input: unknown, clientRequestId: string) => Promise<string | null>; disabled: boolean }) {
-  const [type, setType] = useState<JobType>("supplier_lookup");
-  const [partName, setPartName] = useState("");
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
-  const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
+type RequestReply =
+  | { ok: true; kind: "job"; jobId: string; understood: string; state: WorkplaceState }
+  | { ok: true; kind: "follow_up"; question: string; pending: { transcript: { actor: "You" | "Dispatcher"; text: string }[] } }
+  | { ok: true; kind: "unsupported"; message: string }
+  | { ok: false; error: { code: string; message: string } };
+
+const EXAMPLES = [
+  "Find a Raspberry Pi 5 4GB on Adafruit",
+  "The camera feed at Packing Station 1 stopped",
+  "I need a replacement part",
+];
+
+function RequestForm({ onReply, disabled }: { onReply: (reply: RequestReply) => void; disabled: boolean }) {
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState<Extract<RequestReply, { kind: "follow_up" }>["pending"] | null>(null);
+  const [reply, setReply] = useState<{ tone: "info" | "unsupported" | "error"; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // One id per draft, so a retried submit cannot create a duplicate job.
+  // One id per conversation, so a retried submit cannot create a duplicate job.
   const requestId = useRef<string | null>(null);
+
+  function startOver() {
+    setPending(null);
+    setReply(null);
+    setText("");
+    requestId.current = null;
+  }
 
   async function handle(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || !text.trim()) return;
     setSubmitting(true);
-    setError(null);
     requestId.current ??= newRequestId();
-    const input = type === "supplier_lookup" ? { partName, supplierId } : { scenarioId };
-    const err = await onSubmit(type, input, requestId.current);
+    let r: RequestReply;
+    try {
+      const res = await fetch("/api/workplace/jobs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientRequestId: requestId.current, request: text, pending: pending ?? undefined }),
+      });
+      r = await res.json();
+    } catch {
+      r = { ok: false, error: { code: "NETWORK", message: "Could not reach the local task service." } };
+    }
     setSubmitting(false);
-    if (err) { setError(err); return; }
+    onReply(r);
+    if (!r.ok) { setReply({ tone: "error", text: r.error.message }); return; }
+    if (r.kind === "follow_up") { setPending(r.pending); setReply(null); setText(""); return; }
+    if (r.kind === "unsupported") { setPending(null); setReply({ tone: "unsupported", text: r.message }); requestId.current = null; return; }
+    setPending(null);
+    setText("");
     requestId.current = null;
-    if (type === "supplier_lookup") setPartName("");
+    setReply({ tone: "info", text: `Understood as ${r.understood}` });
   }
 
-  const changeDraft = () => { requestId.current = null; };
+  const asking = pending !== null;
+  const lastQuestion = asking ? [...pending.transcript].reverse().find(l => l.actor === "Dispatcher")?.text : undefined;
 
   return (
     <form className="office-jobForm" onSubmit={handle} aria-labelledby="job-form-title">
       <p className="office-eyebrow">RECEPTION · DISPATCHER</p>
       <h2 id="job-form-title">Give the Dispatcher a job</h2>
-      <fieldset className="office-jobTypes">
-        <legend>Job type</legend>
-        {(Object.keys(JOB_TYPES) as JobType[]).map(t => (
-          <label key={t} className="office-jobType">
-            <input type="radio" name="jobType" value={t} checked={type === t} onChange={() => { setType(t); changeDraft(); }} />
-            <span><strong>{JOB_TYPES[t].label}</strong><small>Needs: {SKILLS[JOB_TYPES[t].requiredSkill]}</small></span>
+      {asking && (
+        <ol className="office-conversation" aria-label="Conversation with the Dispatcher">
+          {pending.transcript.map((line, i) => (
+            <li key={i} className={line.actor === "You" ? "office-saidYou" : "office-saidDispatcher"}><strong>{line.actor}</strong>{line.text}</li>
+          ))}
+        </ol>
+      )}
+      <label className="office-field">
+        {asking ? "Your answer" : "What do you need help with?"}
+        <textarea name="request" rows={asking ? 2 : 3} value={text} maxLength={500} required
+          aria-describedby={asking ? "dispatcher-question" : undefined}
+          placeholder={asking ? "Answer the Dispatcher’s question" : "e.g. Find a Raspberry Pi 5 4GB on Adafruit"}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+      </label>
+      {asking && <p id="dispatcher-question" className="office-visuallyHidden">{lastQuestion}</p>}
+      <div className="office-formActions">
+        <button className="office-hireButton" type="submit" disabled={disabled || submitting || !text.trim()}>
+          {submitting ? "Dispatcher is reading…" : asking ? "Answer the Dispatcher" : "Send to Dispatcher"} <span aria-hidden="true">↗</span>
+        </button>
+        {(asking || reply) && <button type="button" className="office-reset" onClick={startOver}>Start over</button>}
+      </div>
+      {reply && <p className={`office-dispatcherReply office-reply-${reply.tone}`} role={reply.tone === "error" ? "alert" : "status"}><strong>Dispatcher:</strong> {reply.text}</p>}
+      {!asking && (
+        <div className="office-examples" aria-label="Example requests">
+          <span>Try:</span>
+          {EXAMPLES.map(ex => <button key={ex} type="button" onClick={() => { setText(ex); setReply(null); requestId.current = null; }}>{ex}</button>)}
+        </div>
+      )}
+      <p className="office-finePrint">The Dispatcher matches your request to a skill. Supplier lookups use the SAMPLE fixture unless the server runs with PROCUREMENT_MODE=live.</p>
+    </form>
+  );
+}
+
+function SimulatorControls({ fault, onChange }: { fault: string; onChange: (fault: string) => void }) {
+  return (
+    <section className="office-simControls" aria-labelledby="sim-title">
+      <div>
+        <p className="office-eyebrow"><span className="office-modeBadge office-mode-simulated">SIMULATED</span> SIMULATOR CONTROLS · PACKING STATION 1</p>
+        <h2 id="sim-title">Camera fault for the next camera job</h2>
+        <p className="office-jobMeta">This sets what the simulated station reports. The Quality Inspector never sees this choice. It receives only the station’s observations and decides from those.</p>
+      </div>
+      <fieldset className="office-faults">
+        <legend className="office-visuallyHidden">Simulated camera fault</legend>
+        {SCENARIOS.map(sc => (
+          <label key={sc.id} className="office-jobType">
+            <input type="radio" name="cameraFault" value={sc.id} checked={fault === sc.id} onChange={() => onChange(sc.id)} />
+            <span><strong>{sc.title}</strong><small>{sc.description}</small></span>
           </label>
         ))}
       </fieldset>
-      {type === "supplier_lookup" ? (
-        <>
-          <label className="office-field">Part name
-            <input name="partName" value={partName} onChange={e => { setPartName(e.target.value); changeDraft(); }} placeholder="e.g. Raspberry Pi 5 4GB" required minLength={2} maxLength={100} />
-          </label>
-          <label className="office-field">Supplier
-            <select name="supplierId" value={supplierId} onChange={e => { setSupplierId(e.target.value); changeDraft(); }}>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-        </>
-      ) : (
-        <label className="office-field">SIMULATED case
-          <select name="scenarioId" value={scenarioId} onChange={e => { setScenarioId(e.target.value); changeDraft(); }}>
-            {SCENARIOS.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-          </select>
-        </label>
-      )}
-      <button className="office-hireButton" type="submit" disabled={disabled || submitting}>{submitting ? "Sending to the Dispatcher…" : "Submit job"} <span aria-hidden="true">↗</span></button>
-      {error && <p className="office-errorText" role="alert">{error}</p>}
-      <p className="office-finePrint">{type === "camera_incident" ? "Camera observations are SIMULATED. No hardware is contacted." : "Supplier lookups use the SAMPLE fixture unless the server runs with PROCUREMENT_MODE=live."}</p>
-    </form>
+    </section>
   );
 }
 
@@ -352,6 +408,7 @@ function JobCard({ job, state, onHire }: { job: JobView; state: WorkplaceState; 
         <span className={`office-jobStatus office-jobStatus-${job.status}`}>{STATUS_LABEL[job.status]}</span>
         {job.report && <ModeBadge mode={job.report.mode} />}
       </div>
+      {job.input.request && <p className="office-jobRequest">“{job.input.request}”</p>}
       <p className="office-jobMeta">
         Needs {SKILLS[job.requiredSkill]} · {job.hireRole ? <>Assigned to <strong>{job.hireRole}</strong></> : "Unassigned"}
       </p>
@@ -376,7 +433,10 @@ function JobCard({ job, state, onHire }: { job: JobView; state: WorkplaceState; 
           <p className="office-jobMeta">Runtime {(job.report.runtimeMs / 1000).toFixed(1)}s · Demo cost {job.report.demoCostCents === null ? "not billed (staff)" : `${formatCost(job.report.demoCostCents)} at ${formatRate(job.report.hourlyRateCents)}`}</p>
           <details>
             <summary>Open report</summary>
-            {job.report.body.type === "supplier_lookup" ? <SupplierReport result={job.report.body.result} /> : <CameraIncidentReport incident={job.report.body.incident} />}
+            {job.report.body.type === "supplier_lookup" ? <SupplierReport result={job.report.body.result} /> : <>
+              {job.report.body.simulatorFault && <p className="office-jobMeta office-simNote">SIMULATED fault from simulator controls (not shown to the Inspector): {SCENARIOS.find(sc => sc.id === (job.report!.body as { simulatorFault?: string }).simulatorFault)?.title}</p>}
+              <CameraIncidentReport incident={job.report.body.incident} />
+            </>}
           </details>
         </div>
       )}
