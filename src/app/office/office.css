@@ -4,8 +4,6 @@
 .office-office button:focus-visible, .office-office a:focus-visible { outline: 3px solid #a34f2e; outline-offset: 5px; }
 .office-header { height: 84px; padding: 0 4%; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 .office-brand { display: flex; gap: 12px; align-items: center; color: var(--ink); text-decoration: none; font-weight: 650; letter-spacing: -.7px; font-size: 20px; }
-.office-logo { background: var(--ink); color: #f5f5ed; width: 35px; height: 35px; display: grid; place-content: center; grid-auto-flow: column; border-radius: 10px; font-size: 24px; letter-spacing: -3px; padding-right: 3px; }
-.office-logo span { color: #cbd77f; }
 .office-demoBadge { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: 1.3px; border: 1px solid #cdd4c5; border-radius: 30px; padding: 8px 12px; font-weight: 650; }
 .office-demoBadge > span, .office-liveDot, .office-status > span { width: 6px; height: 6px; border-radius: 50%; background: #64805c; display: inline-block; flex-shrink: 0; }
 .office-workspace { max-width: 1536px; margin: auto; padding: 42px 4% 20px; }

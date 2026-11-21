@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import BrandMark from "../brand-mark";
 import OfficeThumbnail from "./office-thumbnail";
 import "./dashboard.css";
 
@@ -47,7 +48,7 @@ export default function WorkspaceDashboard({ workspaces, loading, error, onRefre
   }
 
   return <main className="workspaces-page">
-    <header className="workspaces-header"><Link href="/" className="workspaces-brand"><span aria-hidden="true">ai</span> AI Workplace</Link><nav className="workspaces-nav" aria-label="Main"><span className="workspaces-localBadge">YOUR WORKSPACES</span><Link className="workspaces-navLink" href="/marketplace">Marketplace</Link></nav>{viewer && <span className="workspaces-viewer">Signed in as <strong>{viewer}</strong> · <a href="/auth/logout">Log out</a></span>}</header>
+    <header className="workspaces-header"><Link href="/" className="workspaces-brand"><BrandMark /> AI Workplace</Link><nav className="workspaces-nav" aria-label="Main"><span className="workspaces-localBadge">YOUR WORKSPACES</span><Link className="workspaces-navLink" href="/marketplace">Marketplace</Link></nav>{viewer && <span className="workspaces-viewer">Signed in as <strong>{viewer}</strong> · <a href="/auth/logout">Log out</a></span>}</header>
     <div className="workspaces-content">
       <div className="workspaces-intro"><div><p className="workspaces-eyebrow">A HOME FOR YOUR TEAMS</p><h1>Workspaces</h1><p>A little space for each team. Step into an office, meet your workers, and pick up where the work left off.</p></div><div className="workspaces-introActions"><button className="workspaces-primary" type="button" aria-expanded={creating} aria-controls="workspace-create" onClick={() => { setCreating(value => !value); setCreateError(null); }}>+ New workspace</button><Link className="workspaces-secondary workspaces-marketCta" href="/marketplace">Browse the marketplace ↗</Link></div></div>
       {creating && <form id="workspace-create" className="workspaces-createForm" onSubmit={create}>

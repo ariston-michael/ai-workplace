@@ -6,7 +6,6 @@
 .market-loading { padding: 40px; font-family: var(--font-geist-sans), Arial, sans-serif; }
 .market-header { display: flex; align-items: center; gap: 24px; padding: 22px 4%; border-bottom: 1px solid var(--m-line); flex-wrap: wrap; }
 .market-brand { display: flex; gap: 11px; align-items: center; color: inherit; font-weight: 650; font-size: 20px; letter-spacing: -.5px; text-decoration: none; }
-.market-brand > span { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 10px; color: #edf0d9; background: #2e493e; }
 .market-nav { display: flex; gap: 6px; font-size: 12px; font-weight: 600; }
 .market-nav > * { padding: 8px 12px; border-radius: 24px; color: inherit; text-decoration: none; border: 1px solid transparent; }
 .market-nav a:hover { border-color: #cdd5c3; }

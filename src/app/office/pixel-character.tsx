@@ -22,11 +22,11 @@ function body(rect: (x: number, y: number, w: number, h: number, c: string) => v
 }
 
 /** Hand-drawn official cast, four facings and four poses; no external artwork. */
-function castBlocks(id: CharacterId, facing: Facing, frame: number): Block[] {
+function castBlocks(id: CharacterId, facing: Facing, frame: number, accentOverride?: string): Block[] {
   const blocks: Block[] = [];
   const rect = (x: number, y: number, w: number, h: number, color: string) => blocks.push([x, y, w, h, color]);
-  const { back, side, arm } = body(rect, { accent: CHARACTERS[id].accent, skin, backHead: "#4c4148", facing, frame });
-  const accent = CHARACTERS[id].accent;
+  const accent = accentOverride ?? CHARACTERS[id].accent;
+  const { back, side, arm } = body(rect, { accent, skin, backHead: "#4c4148", facing, frame });
   if (id === "dispatcher") {
     rect(6, 2, 15, 4, ink); rect(7, 1, 11, 3, accent); rect(7, 4, 6, 2, accent);
     rect(7, 6, 2, 5, "#a6d9ce"); if (!back) { rect(7, 10, 6, 1, ink); rect(12, 10, 2, 2, "#f5dc8e"); }
@@ -81,8 +81,8 @@ function customBlocks(s: CustomSprite, facing: Facing, frame: number): Block[] {
   return blocks;
 }
 
-function Pose({ sprite, facing, frame }: { sprite: SpriteSpec; facing: Facing; frame: number }) {
-  const blocks = sprite.kind === "cast" ? castBlocks(sprite.id, facing, frame) : customBlocks(sprite, facing, frame);
+function Pose({ sprite, facing, frame, accentOverride }: { sprite: SpriteSpec; facing: Facing; frame: number; accentOverride?: string }) {
+  const blocks = sprite.kind === "cast" ? castBlocks(sprite.id, facing, frame, accentOverride) : customBlocks(sprite, facing, frame);
   return <g transform={facing === "west" ? "translate(26 0) scale(-1 1)" : undefined}>
     {blocks.map(([x, y, width, height, fill], i) => <rect key={i} x={x} y={y} width={width} height={height} fill={fill} />)}
   </g>;
@@ -91,12 +91,13 @@ function Pose({ sprite, facing, frame }: { sprite: SpriteSpec; facing: Facing; f
 export type Gesture = "idle" | "wave" | "work" | "report";
 
 /** Pass either a saved sprite or, for the built-in cast, its id. */
-export default function PixelCharacter({ sprite, id, portrait = false, gesture = "idle", facing, stroll = false }: {
+export default function PixelCharacter({ sprite, id, portrait = false, gesture = "idle", facing, stroll = false, accentOverride }: {
   sprite?: SpriteSpec; id?: CharacterId; portrait?: boolean; gesture?: Gesture;
   /** Loop the walk cycle in place (marketplace previews). */
   stroll?: boolean;
   /** Fixed facing for previews outside the map (the map sets facing via data-facing). */
   facing?: Facing;
+  accentOverride?: string;
 }) {
   const spec = sprite ?? castSprite(id ?? "catalog_assistant");
   const castId = spec.kind === "cast" ? spec.id : null;
@@ -106,7 +107,7 @@ export default function PixelCharacter({ sprite, id, portrait = false, gesture =
   return <span className={className} style={style} data-gesture={gesture} data-fixed-facing={facing} data-stroll={stroll || undefined} aria-hidden="true">
     <svg className="office-mapSprite" viewBox="0 0 26 30" shapeRendering="crispEdges" focusable="false">
       {facings.map(f => <g className={`office-facing office-facing-${f}`} key={f}>
-        {[0, 1, 2, 3].map(frame => <g className={`office-pose office-pose-${frame}`} key={frame}><Pose sprite={spec} facing={f} frame={frame} /></g>)}
+        {[0, 1, 2, 3].map(frame => <g className={`office-pose office-pose-${frame}`} key={frame}><Pose sprite={spec} facing={f} frame={frame} accentOverride={accentOverride} /></g>)}
       </g>)}
       {castId === "dispatcher" && <g className="office-characterWave"><path d="M20 16h4v-5h-2V8h-2v4h-2v3h2z" fill={skin} stroke={ink} strokeWidth="1" /></g>}
       {castId === "quality_inspector" && <path className="office-characterTick" d="m19 19 1 1 3-3" fill="none" stroke="#20847d" strokeWidth="1.5" />}

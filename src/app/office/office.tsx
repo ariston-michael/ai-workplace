@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import BrandMark from "../brand-mark";
 import OfficeMap from "./office-map";
 import PixelCharacter, { ListingBadge } from "./pixel-character";
 import InventoryReport from "./inventory-report";
@@ -316,7 +317,7 @@ function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arriv
   return (
     <main className="office-office" data-preview-branch={process.env.NEXT_PUBLIC_PREVIEW_BRANCH} data-preview-commit={process.env.NEXT_PUBLIC_PREVIEW_COMMIT}>
       <header className="office-header">
-        <Link className="office-brand" href="/"><span className="office-logo" aria-hidden="true">a<span>i</span></span> AI Workplace</Link>
+        <Link className="office-brand" href="/"><BrandMark /> AI Workplace</Link>
         <OfficeSwitcher current={workspaceId} currentName={state?.workspace.name} />
         <div className="office-headerBadges">
           {state && (state.dispatcher.engine === "gemini"
