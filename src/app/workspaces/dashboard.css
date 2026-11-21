@@ -40,22 +40,14 @@
 .workspaces-empty h3 { font-size: 23px; font-weight: 500; margin: 12px 0; }
 .workspaces-empty p, .workspaces-status { font-size: 12px; line-height: 1.8; color: var(--ws-muted); }
 .workspaces-footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--ws-line); padding-top: 21px; margin-top: 34px; color: var(--ws-muted); font-size: 10px; }
-.workspaces-miniOffice { position: relative; width: 100%; aspect-ratio: 1.6; background: repeating-linear-gradient(0deg, #e5dfcc 0 24px, #ded7c2 24px 25px); border: 7px solid #bac7ad; border-bottom-color: #9eaf94; border-radius: 5px; box-shadow: 5px 8px 0 #55654315; }
-.workspaces-miniWindow { position: absolute; left: 29%; top: -7px; width: 42%; height: 10px; background: repeating-linear-gradient(90deg, #bcd3cd 0 31%, #8fa59b 31% 33%); border: 2px solid #8fa59b; }
-.workspaces-miniRug { position: absolute; top: 22%; left: 7%; width: 86%; height: 38%; background: repeating-linear-gradient(90deg, #bdc5a9 0 2px, #b8c1a4 2px 4px); border: 3px solid #a9b49c; border-radius: 5px; }
-.workspaces-miniDesk { position: absolute; width: 31%; height: 17%; background: #c79565; border: 2px solid #ae7b4e; border-radius: 4px; box-shadow: 0 3px 0 #916845; }
-.workspaces-miniDesk-one { left: 14%; top: 31%; }
-.workspaces-miniDesk-two { right: 14%; top: 31%; }
-.workspaces-miniDesk-three { right: 14%; bottom: 14%; }
-.workspaces-miniDesk i { position: absolute; top: -19px; left: 35%; width: 30%; height: 14px; background: #7c8f78; border: 2px solid #687a68; border-radius: 4px; }
-.workspaces-miniDesk span { position: absolute; width: 40%; height: 50%; top: 15%; left: 30%; border: 2px solid #53675f; background: #364a44; border-radius: 2px; }
-.workspaces-miniDesk b { position: absolute; width: 30%; height: 12%; bottom: 7%; left: 35%; background: #e4dfca; }
-.workspaces-miniReception { position: absolute; bottom: 15%; left: 14%; width: 30%; height: 16%; background: #d4b080; border: 2px solid #ae7b4e; border-radius: 4px 4px 10px 10px; box-shadow: 0 3px 0 #916845; }
-.workspaces-miniReception span { display: block; width: 35%; height: 9px; background: #53675f; margin: 4px auto; }
-.workspaces-miniPlant { position: absolute; font-size: 35px; color: #4c7149; line-height: 1; text-shadow: 1px 2px #3a5b37; }
-.workspaces-miniPlant-one { right: 2%; top: 4%; }
-.workspaces-miniPlant-two { left: 2%; bottom: 3%; }
-.workspaces-miniDoor { position: absolute; width: 22%; height: 7px; left: 18%; bottom: -7px; background: #f0eddc; border-left: 2px solid #9eaf94; border-right: 2px solid #9eaf94; }
+.workspaces-miniOfficeFrame { position: relative; width: 100%; aspect-ratio: 1016 / 736; overflow: hidden; container-type: inline-size; }
+.workspaces-miniOfficeShell { position: absolute; top: 0; left: 50%; width: 1016px; height: 736px; transform: translateX(-50%) scale(.36); transform-origin: top center; }
+.workspaces-miniOfficeFrame .workspaces-miniOfficeShell { transform: translateX(-50%) scale(calc(100cqw / 1016px)); }
+.workspaces-miniWorker { position: absolute; z-index: 4; transform: translate(-50%, -50%); pointer-events: none; }
+@supports not (transform: scale(calc(100cqw / 1016px))) {
+  @media (max-width: 1080px) { .workspaces-miniOfficeShell { transform: translateX(-50%) scale(.28); } }
+  @media (max-width: 640px) { .workspaces-miniOfficeShell { transform: translateX(-50%) scale(.27); } }
+}
 @media (max-width: 1080px) { .workspaces-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .workspaces-grid { grid-template-columns: 1fr; } .workspaces-content { padding: 30px 20px 22px; } .workspaces-header { padding: 20px; } .workspaces-brand { font-size: 16px; } .workspaces-intro { align-items: flex-start; flex-direction: column; } .workspaces-cardArt { padding: 27px 36px; } }
 @media (prefers-reduced-motion: reduce) { .workspaces-card { transition: none; } }
