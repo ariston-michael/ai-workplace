@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { defaultDbPath } from "../workplace/db.server.ts";
 import type { JobView, JobEventView, ReportView } from "../workplace/types.ts";
 
-type JobRow = Omit<JobView, "input" | "error" | "events" | "report"> & { input: string; error: string | null };
+type JobRow = Omit<JobView, "input" | "error" | "events" | "report" | "sms"> & { input: string; error: string | null; smsCode: string | null; smsPhone: string | null };
 type EventRow = JobEventView & { jobId: string };
 type ReportRow = Omit<ReportView, "body"> & { jobId: string; body: string };
 
@@ -23,8 +23,9 @@ export function readSavedJobs(file = defaultDbPath(), workspaceId: string | unde
       SELECT j.id, j.type, j.title, j.input, j.required_skill AS requiredSkill,
         j.status, j.hire_id AS hireId, h.role AS hireRole, json_extract(h.snapshot, '$.characterName') AS hireName,
         j.recommended_profile_id AS recommendedProfileId, j.created_at AS createdAt,
-        j.assigned_at AS assignedAt, j.started_at AS startedAt, j.finished_at AS finishedAt, j.error
-      FROM jobs j LEFT JOIN hires h ON h.id = j.hire_id
+        j.assigned_at AS assignedAt, j.started_at AS startedAt, j.finished_at AS finishedAt, j.error,
+        s.code AS smsCode, s.phone AS smsPhone
+      FROM jobs j LEFT JOIN hires h ON h.id = j.hire_id LEFT JOIN sms_jobs s ON s.job_id = j.id
       WHERE j.workspace_id = ? ORDER BY j.created_at DESC, j.rowid DESC LIMIT 50
     `).all(workspace.id) as unknown as JobRow[];
     if (!jobs.length) return [];
@@ -36,10 +37,11 @@ export function readSavedJobs(file = defaultDbPath(), workspaceId: string | unde
       runtime_ms AS runtimeMs, hourly_rate_cents AS hourlyRateCents,
       demo_cost_cents AS demoCostCents, created_at AS createdAt FROM reports
       WHERE job_id IN (${placeholders})`).all(...ids) as unknown as ReportRow[];
-    return jobs.map(row => {
+    return jobs.map(({ smsCode, smsPhone, ...row }) => {
       const report = reports.find(item => item.jobId === row.id);
       return {
         ...row, input: JSON.parse(row.input), error: row.error ? JSON.parse(row.error) : null,
+        sms: smsCode && smsPhone ? { code: smsCode, phone: `•••${smsPhone.slice(-4)}` } : null,
         events: events.filter(event => event.jobId === row.id).map(({ at, actor, text }) => ({ at, actor, text })),
         report: report ? {
           id: report.id, mode: report.mode, outcome: report.outcome, summary: report.summary,

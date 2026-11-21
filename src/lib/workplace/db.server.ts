@@ -14,6 +14,9 @@
 //   5  union of both v4s: community listings (sprite + optional inventory action),
 //      hires.snapshot (immutable listing copy), retention ('team' | 'job'),
 //      instructions, departures, hire_events history, and the 'local' report mode.
+//   6  SMS (Twilio): phone links to one workspace, single-use link codes, inbound
+//      message log (MessageSid dedupe), per-phone conversation state, job codes
+//      for jobs requested by text, and an outbox so each result is texted once.
 
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
@@ -22,7 +25,7 @@ import { migrateV4toV5 } from "./migrate-v5.server.ts";
 
 export type Db = DatabaseSync;
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const DEFAULT_WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_NAME = "Default office";
 /** workspace_id used by schema v1 for all rows. */
@@ -197,6 +200,66 @@ function migrateV3toV4(db: Db) {
   }
 }
 
+/** v5 → v6: SMS tables. Additive. */
+function migrateV5toV6(db: Db) {
+  db.exec(`
+    CREATE TABLE sms_links (
+      phone        TEXT PRIMARY KEY CHECK (phone GLOB '+[1-9]*' AND length(phone) BETWEEN 9 AND 16),
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      owner_sub    TEXT NOT NULL,
+      linked_at    INTEGER NOT NULL
+    );
+    CREATE INDEX sms_links_by_workspace ON sms_links (workspace_id);
+    CREATE TABLE sms_link_codes (
+      code_hash    TEXT PRIMARY KEY,          -- sha256 of the code; the code itself is never stored
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      owner_sub    TEXT NOT NULL,
+      created_at   INTEGER NOT NULL,
+      expires_at   INTEGER NOT NULL,
+      used_at      INTEGER,
+      used_by      TEXT
+    );
+    CREATE TABLE sms_inbound (
+      message_sid TEXT PRIMARY KEY,           -- Twilio MessageSid: a redelivery is answered from here
+      phone       TEXT NOT NULL,
+      kind        TEXT NOT NULL,
+      reply       TEXT,                       -- NULL while the first delivery is being handled
+      received_at INTEGER NOT NULL
+    );
+    CREATE INDEX sms_inbound_by_phone ON sms_inbound (phone, received_at);
+    CREATE TABLE sms_conversations (
+      phone             TEXT PRIMARY KEY,
+      workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      client_request_id TEXT NOT NULL,
+      pending           TEXT,               -- Dispatcher follow-up state (server-side for SMS)
+      updated_at        INTEGER NOT NULL
+    );
+    CREATE TABLE sms_jobs (
+      job_id       TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      code         TEXT NOT NULL,
+      phone        TEXT NOT NULL,
+      created_at   INTEGER NOT NULL,
+      UNIQUE (workspace_id, code),
+      FOREIGN KEY (workspace_id, job_id) REFERENCES jobs (workspace_id, id) ON DELETE CASCADE
+    );
+    CREATE TABLE sms_outbox (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id TEXT NOT NULL,
+      job_id       TEXT NOT NULL,
+      kind         TEXT NOT NULL,
+      phone        TEXT NOT NULL,
+      body         TEXT NOT NULL,
+      status       TEXT NOT NULL CHECK (status IN ('sending', 'sent', 'failed')),
+      twilio_sid   TEXT,
+      error        TEXT,
+      created_at   INTEGER NOT NULL,
+      UNIQUE (job_id, kind),
+      FOREIGN KEY (workspace_id, job_id) REFERENCES jobs (workspace_id, id) ON DELETE CASCADE
+    );
+  `);
+}
+
 /** Bring any database up to SCHEMA_VERSION, one version at a time. Exported for tests. */
 export function migrate(db: Db, file: string, now = Date.now()) {
   let version = userVersion(db);
@@ -231,6 +294,10 @@ export function migrate(db: Db, file: string, now = Date.now()) {
     if (version === 4) {
       migrateV4toV5(db);
       version = 5;
+    }
+    if (version === 5) {
+      migrateV5toV6(db);
+      version = 6;
     }
     db.prepare("INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(
       DEFAULT_WORKSPACE_ID,

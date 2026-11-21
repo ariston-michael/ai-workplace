@@ -6,6 +6,7 @@ import OfficeMap from "./office-map";
 import PixelCharacter, { ListingBadge } from "./pixel-character";
 import InventoryReport from "./inventory-report";
 import AgentAction from "./agent-action";
+import SmsPanel from "./sms-panel";
 import { CHARACTERS, characterVoice, characterTask, inventoryVoice } from "@/lib/workplace/characters";
 import type { MarketplaceListing } from "@/lib/workplace/marketplace";
 import type { SpriteSpec } from "@/lib/workplace/sprites";
@@ -383,6 +384,7 @@ function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arriv
             )}
             <div className="office-requestDock" hidden={selection !== null && selection !== "dispatcher"}>
               <RequestForm base={base} onReply={onRequestReply} disabled={!state} engine={state?.dispatcher.engine ?? "rules"} />
+              <SmsPanel workspaceId={workspaceId} />
               <h3 className="office-sectionLabel">RECENT DECISIONS</h3>
               <ul className="office-eventList">
                 {(state?.jobs ?? []).flatMap(j => j.events.filter(e => e.actor === "Dispatcher").map(e => ({ ...e, job: j.title }))).sort((a, b) => b.at - a.at).slice(0, 5)
@@ -630,6 +632,7 @@ function JobCard({ job, state, onHire, onKeep }: { job: JobView; state: Workplac
         {job.report && <ModeBadge mode={job.report.mode} />}
       </div>
       {job.input.request && <p className="office-jobRequest">“{job.input.request}”</p>}
+      {job.sms && <p className="office-jobMeta office-smsJob">📱 Requested by text from {job.sms.phone} · job code <strong>{job.sms.code}</strong></p>}
       {"csv" in job.input && <p className="office-jobMeta">Input: private inventory CSV ({job.input.csv.trim().split(/\r?\n/).length - 1} rows), kept in this office.</p>}
       <p className="office-jobMeta">
         Needs {SKILLS[job.requiredSkill]} · {job.hireRole ? <>Assigned to <strong>{job.hireName ? `${job.hireName}, ` : ""}{job.hireRole}</strong>{worker ? (worker.departedAt ? " · left the office" : jobOnly ? " · for this job" : " · on the team") : ""}</> : "Unassigned"}
