@@ -9,6 +9,9 @@ export default function Home() {
         supplier lookup by the Procurement Researcher.
       </p>
       <div className="flex flex-wrap gap-3">
+        <Link href="/office" className="rounded-full bg-foreground px-5 py-2 font-medium text-background">
+          Open interactive office
+        </Link>
         <Link
           href="/procurement"
           className="rounded-full bg-foreground px-5 py-2 font-medium text-background"

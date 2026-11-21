@@ -65,7 +65,7 @@ export default function Office() {
   const [announcement, setAnnouncement] = useState("");
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const incident = useRepairIncident();
-  const inspectorBusy = incident.stage === "assigned";
+  const inspectorBusy = incident.incident?.status === "open";
   const worker = selection === "dispatcher" ? dispatcher : selection === "inspector" ? inspector : selection === "desk" ? hire : null;
   const marketplace = selection === "desk" && !hire;
 
@@ -115,11 +115,11 @@ export default function Office() {
               <div className="office-plant office-plantTwo" aria-hidden="true">✦</div>
               <span className="office-roomLabel">THE WORKROOM</span>
               <div className="office-rug" aria-hidden="true" />
-              <Station worker={inspector} station="inspection" label="Workstation 01" status={inspectorStatus(incident.stage)} selected={selection === "inspector"} onClick={() => selectStation("inspector")} />
+              <Station worker={inspector} station="inspection" label="Workstation 01" status={inspectorStatus(incident)} selected={selection === "inspector"} onClick={() => selectStation("inspector")} />
               <Station worker={hire ?? undefined} station="openDesk" label="Desk 02" selected={selection === "desk"} onClick={() => selectStation("desk")} />
               <div className="office-divider" aria-hidden="true" />
               <span className="office-receptionLabel">RECEPTION</span>
-              <Station worker={dispatcher} station="reception" label="Reception" status={incident.stage === "stopped" ? "Reviewing incident" : incident.stage === "assigned" ? "Job assigned" : undefined} selected={selection === "dispatcher"} onClick={() => selectStation("dispatcher")} />
+              <Station worker={dispatcher} station="reception" label="Reception" status={incident.incident?.phase === "awaiting_observations" ? "Reviewing incident" : incident.incident?.status === "open" ? "Incident open" : undefined} selected={selection === "dispatcher"} onClick={() => selectStation("dispatcher")} />
               <div className="office-sofa" aria-hidden="true"><i /><i /><i /></div>
               <div className="office-coffeeTable" aria-hidden="true"><span /></div>
               <span className="office-entry" aria-hidden="true">WELCOME IN ↑</span>
@@ -145,13 +145,13 @@ export default function Office() {
               </div>
             ) : worker ? (
               <div className="office-panelBody">
-                <div className="office-profile"><Avatar worker={worker} /><span className="office-status"><span /> {worker.id === "inspector" ? inspectorStatus(incident.stage) : worker.id === "dispatcher" && incident.stage === "stopped" ? "Reviewing incident" : "Ready"} · demo</span></div>
+                <div className="office-profile"><Avatar worker={worker} /><span className="office-status"><span /> {worker.id === "inspector" ? inspectorStatus(incident) : worker.id === "dispatcher" && incident.incident?.phase === "awaiting_observations" ? "Reviewing incident" : "Ready"} · demo</span></div>
                 <p className="office-description">{worker.specialty}</p>
                 {worker.id === "inspector" && <RepairWorkerReport incident={incident} />}
-                {worker.id === "dispatcher" && incident.stage !== "watching" && <div className="office-note"><p>{incident.stage === "stopped" ? "Reviewing REPAIR-001: the Packing Station 1 demo feed stopped. Preparing a remote check assignment." : "Assigned REPAIR-001 to Quality Inspector for a remote feed check."} {incident.stage === "reported" && "The worker report is ready for review."}</p></div>}
-                {worker.id === "dispatcher" && (incident.stage === "assigned" || incident.stage === "reported") && <button className="office-hireButton" type="button" onClick={() => selectStation("inspector")}>View assigned worker <span aria-hidden="true">↗</span></button>}
+                {worker.id === "dispatcher" && incident.incident !== null && <div className="office-note"><p>{incident.incident?.phase === "awaiting_observations" ? "SIMULATED: The Packing Station 1 feed stopped. Waiting for camera and service observations." : "SIMULATED: Quality Inspector is reviewing the shared simulator evidence and my camera incident decisions."} {incident.incident?.status === "resolved" && "A fresh frame resolved the incident. The worker report is ready for review."}</p></div>}
+                {worker.id === "dispatcher" && (incident.incident?.status === "open" || incident.incident?.status === "resolved") && <button className="office-hireButton" type="button" onClick={() => selectStation("inspector")}>View assigned worker <span aria-hidden="true">↗</span></button>}
                 <h3 className="office-sectionLabel">SKILLS</h3><ul className="office-skills">{worker.skills.map(skill => <li key={skill}>{skill}</li>)}</ul>
-                <dl className="office-details"><div><dt>Station</dt><dd>{worker.id === "dispatcher" ? "Reception" : worker.id === "inspector" ? "Workstation 01" : "Desk 02"}</dd></div><div><dt>Current status</dt><dd>{worker.id === "inspector" ? inspectorStatus(incident.stage) : worker.id === "dispatcher" && incident.stage === "stopped" ? "Reviewing incident" : "Ready for a request"}</dd></div><div><dt>Active tasks</dt><dd>{worker.id === "inspector" && inspectorBusy ? 1 : 0}</dd></div>{worker.rate !== undefined && <div><dt>Demo hourly rate</dt><dd>${worker.rate} / hour</dd></div>}</dl>
+                <dl className="office-details"><div><dt>Station</dt><dd>{worker.id === "dispatcher" ? "Reception" : worker.id === "inspector" ? "Workstation 01" : "Desk 02"}</dd></div><div><dt>Current status</dt><dd>{worker.id === "inspector" ? inspectorStatus(incident) : worker.id === "dispatcher" && incident.incident?.phase === "awaiting_observations" ? "Reviewing incident" : "Ready for a request"}</dd></div><div><dt>Active tasks</dt><dd>{worker.id === "inspector" && inspectorBusy ? 1 : 0}</dd></div>{worker.rate !== undefined && <div><dt>Demo hourly rate</dt><dd>${worker.rate} / hour</dd></div>}</dl>
                 <div className="office-note"><span aria-hidden="true">↳</span><p>{worker.id === "inspector" ? "This is a demo worker. No inspection or hardware is connected." : worker.id === "dispatcher" ? "Your demo coordinator assigns the sample feed incident to Quality Inspector. General request routing is not connected." : "Your new teammate is seated and ready. This demo hire does not run supplier searches or create charges."}</p></div>
               </div>
             ) : (

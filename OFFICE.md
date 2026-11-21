@@ -14,20 +14,24 @@ and open http://localhost:3001/office.
 All desks are keyboard-accessible buttons. The detail panel receives focus when selected.
 The layout stacks on small screens and respects reduced-motion preferences.
 
-## Repair incident demo
+## Integrated camera incident simulator
 
-1. In the feed-health panel, choose **Suspected loose camera cable** or **Stalled stream service**.
-2. Click **Simulate feed stop**. The sample feed stops immediately; after about two seconds the Dispatcher assigns REPAIR-001 to Quality Inspector.
-3. Select the inspector's workstation during diagnosis to see its active status. About three seconds after assignment, the worker returns a report.
-4. Click the inspector or **View worker report** to inspect evidence, the simulated action taken, the visit recommendation, and uncertainties.
-5. The cable scenario leaves the feed stopped and recommends a site visit. The stalled-service scenario restores the sample feed and indicates no visit is currently needed.
-6. **Restart feed demo** clears just the incident, preserving your hire. It also cancels an in-progress sequence. **Reset demo** clears the incident and hire together. Refresh clears both.
+The office uses `src/lib/camera-incident.ts` for every observation, decision, action status, and resolution. It does not contact the separate simulator page or a backend. Both pages run the same pure state machine locally.
 
-Incident events continue while you browse workers or hire someone. The report stays available on the inspector until you restart or reset the demo. All feed observations and repairs are scripted samples; no actual device is monitored, restarted, or booked for a visit.
+1. Choose one of the three case buttons in the feed-health panel. This opens a SIMULATED feed-stopped incident.
+2. Use **Next observation** to deliver USB camera detection and service status. The Dispatcher only chooses an action after both observations arrive.
+3. Click the Inspector's workstation or **View worker report** to inspect the actual simulator evidence, requested/completed action, visit decision, uncertainties, and full timeline.
+4. Continue observations individually or use **Run to end**:
+   - **Case 1a:** camera detected, service stopped → restart requested → restart succeeds → fresh frame resolves the incident.
+   - **Case 1b:** restart succeeds but no fresh frame arrives → incident remains open, waiting for a fresh frame. No technician visit is invented.
+   - **Case 2:** camera missing → technician cable-check task, with no restart. The technician's report alone leaves the incident open; the final fresh frame resolves it.
+5. Switching cases or **Restart feed demo** preserves your hire. **Reset demo** and refresh clear the hire and incident together.
+
+All observations are labeled SIMULATED. No actual camera is monitored, service restarted, or visit booked. A successful action does not itself resolve the incident.
 
 This milestone uses React state and local sample profiles only. Rates are illustrative;
 no charges, supplier calls, backend tasks, hardware inspections, or persistence are created.
-The lookup page, provider integration, backend routes, database, shared layout, and global styles are untouched.
+Hiring remains local and independent of simulator case selection. Procurement remains a separate server-backed lookup at `/procurement`.
 
-Checks: `npm run lint`, `npx tsc --noEmit`, and `npm run build`.
+Checks: `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
 The existing root layout fetches Google Fonts, so production builds need network access.

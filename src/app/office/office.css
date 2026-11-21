@@ -113,6 +113,17 @@
 .office-incidentHeading h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.5px; }
 .office-feedBadge { display: inline-block; flex-shrink: 0; background: #edf2e5; color: #4e6541; border: 1px solid #d8dfcd; border-radius: 20px; padding: 8px 12px; font-size: 11px; }
 .office-feedStopped { background: #f6e6d6; color: #874823; border-color: #e7c4a9; }
+.office-scenarioCases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+.office-scenarioCase { border: 1px solid var(--line); background: #f5f6ee; color: var(--ink); border-radius: 9px; padding: 15px; text-align: left; }
+.office-scenarioCase[aria-pressed="true"] { background: #e5edd8; border-color: #647d50; }
+.office-scenarioCase strong { display: block; font-weight: 600; font-size: 12px; line-height: 1.7; }
+.office-scenarioCase > span { display: block; font-size: 11px; line-height: 1.7; color: var(--muted); margin-top: 7px; }
+.office-incidentControls .office-reset { white-space: normal; text-align: left; }
+.office-incidentControls button:disabled { opacity: .5; cursor: default; }
+.office-reportTimeline { margin-top: 18px; }
+.office-reportTimeline summary { font-size: 12px; cursor: pointer; }
+.office-reportTimeline ol { padding-left: 18px; list-style: decimal; margin-top: 12px; }
+@media (max-width: 780px) { .office-scenarioCases { grid-template-columns: 1fr; } }
 .office-incidentLayout { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 26px; }
 .office-feedPreview { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; align-self: start; }
 .office-feedImage { min-height: 130px; background: #dce3d1; display: flex; align-items: center; justify-content: center; gap: 15px; position: relative; }
