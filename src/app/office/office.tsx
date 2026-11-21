@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import OfficeMap from "./office-map";
+import PixelCharacter from "./pixel-character";
+import { CHARACTERS, characterId, characterVoice, characterTask } from "@/lib/workplace/characters";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import "./office.css";
 import { CameraIncidentReport } from "./repair-incident";
 import { SCENARIOS } from "@/lib/camera-incident";
 import type { LookupResult } from "@/lib/procurement";
 import {
-  DISPATCHER,
   JOB_TYPES,
   SKILLS,
   formatCost,
@@ -41,10 +42,10 @@ function newRequestId() {
   return crypto.randomUUID();
 }
 
-type AvatarLike = { initials: string; color: string };
+type AvatarLike = { initials: string; color: string; id?: string; profileId?: string };
 
 function Avatar({ worker, small = false, away = false }: { worker: AvatarLike; small?: boolean; away?: boolean }) {
-  return <span aria-hidden="true" className={`office-avatar office-${worker.color} ${small ? "office-smallAvatar" : ""} ${away ? "office-away" : ""}`}>{worker.initials}</span>;
+  return <span aria-hidden="true" className={`office-avatar office-${worker.color} ${small ? "office-smallAvatar" : ""} ${away ? "office-away" : ""}`}><PixelCharacter id={characterId(worker.profileId ?? worker.id ?? (worker.initials === "DI" ? "dispatcher" : "catalog_assistant"))} /></span>;
 }
 
 function ModeBadge({ mode }: { mode: ReportMode }) {
@@ -290,13 +291,15 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
                 </div>
               </>
             ) : selectedHire && state ? (
-              <WorkerPanel hire={selectedHire} state={state} reportJobId={selectedReportId} headingRef={panelHeading} />
+              <WorkerPanel key={`${selectedHire.id}:${selectedReportId ?? ""}`} hire={selectedHire} state={state} reportJobId={selectedReportId} headingRef={panelHeading} />
             ) : (selection === "dispatcher" || selection === null) ? (
               <>
                 <div className="office-panelHeader"><p className="office-eyebrow">WORKER DETAILS</p><h2 id="panel-title" ref={panelHeading} tabIndex={-1}>Dispatcher</h2></div>
                 <div className="office-panelBody">
-                  <div className="office-profile"><Avatar worker={DISPATCHER} /><span className="office-status"><span /> Reception · always on</span></div>
-                  <p className="office-description">{DISPATCHER.specialty}</p>
+                  <div className="office-characterIdentity"><PixelCharacter id="dispatcher" portrait gesture="wave" /><div><h3>Milo</h3><p>Dispatcher · reception</p><span className="office-status"><span /> Ready to help</span></div></div>
+                  <blockquote className="office-characterVoice">“{CHARACTERS.dispatcher.voice}”</blockquote>
+                  <ul className="office-skills"><li>Task routing</li><li>Team skill matching</li><li>Hiring recommendations</li></ul>
+                  <dl className="office-details"><div><dt>Hourly rate</dt><dd>Included · built-in staff</dd></div><div><dt>Current task</dt><dd>{state?.jobs.find(job => job.status === "needs_worker") ? "Waiting for your hiring decision" : "Reception · ready for your next request"}</dd></div></dl>
                 </div>
               </>
             ) : (
@@ -541,29 +544,29 @@ function SupplierReport({ result }: { result: LookupResult }) {
 
 function WorkerPanel({ hire, state, headingRef, reportJobId }: { hire: HireView; state: WorkplaceState; reportJobId?: string; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
   const jobs = state.jobs.filter(j => j.hireId === hire.id);
-  const active = jobs.find(j => j.id === hire.activeJobId);
+  const active = jobs.find(j => j.status === "working") ?? jobs.find(j => j.id === hire.activeJobId);
   const latest = reportJobId ? jobs.find(j => j.id === reportJobId) : jobs.find(j => j.report);
+  const id = characterId(hire.profileId);
+  const character = CHARACTERS[id];
   return (
     <>
-      <div className="office-panelHeader"><p className="office-eyebrow">WORKER DETAILS</p><h2 id="panel-title" ref={headingRef} tabIndex={-1}>{hire.role}</h2></div>
+      <div className="office-panelHeader"><p className="office-eyebrow">WORKER PROFILE</p><h2 id="panel-title" ref={headingRef} tabIndex={-1}>{hire.role}</h2></div>
       <div className="office-panelBody">
-        <div className="office-profile"><Avatar worker={hire} /><span className="office-status"><span /> {active ? (active.status === "working" ? "Working" : "Job assigned") : latest?.report ? "Report ready" : "Ready"}</span></div>
-        <p className="office-description">{hire.specialty}</p>
+        <div className="office-characterIdentity"><PixelCharacter id={id} portrait /><div><h3>{character.name}</h3><p>{hire.role}</p><span className="office-status"><span /> {active ? (active.status === "working" ? "Working" : "Job assigned") : latest?.report ? "Report ready" : "Ready"}</span></div></div>
+        <blockquote className="office-characterVoice">“{characterVoice(id, active ?? jobs[0])}”</blockquote>
+        {latest?.report && <a className="office-viewReport" href="#worker-saved-report" onClick={event => { event.preventDefault(); const report = document.getElementById("worker-report-details") as HTMLDetailsElement | null; if (report) { report.open = true; document.getElementById("worker-saved-report")?.focus(); } }}>View report <span aria-hidden="true">↗</span></a>}
         <h3 className="office-sectionLabel">SKILLS</h3><ul className="office-skills">{hire.skills.map(s => <li key={s}>{SKILLS[s]}</li>)}</ul>
         <dl className="office-details">
-          <div><dt>Station</dt><dd>{DESKS.find(d => d.desk === hire.desk)?.label}</dd></div>
-          <div><dt>Hired</dt><dd>{hire.source === "staff" ? "Built-in staff" : "From marketplace"}</dd></div>
           <div><dt>Demo hourly rate</dt><dd>{formatRate(hire.hourlyRateCents)}</dd></div>
-          <div><dt>Jobs completed</dt><dd>{hire.completedJobs}</dd></div>
-          <div><dt>Current job</dt><dd>{active?.title ?? "None"}</dd></div>
+          <div><dt>Current task</dt><dd>{characterTask(active ?? jobs[0])}</dd></div>
         </dl>
         {latest && <p className="office-workflowLink"><Link href={`/workflow?workspace=${encodeURIComponent(state.workspaceId)}&job=${encodeURIComponent(latest.id)}`}>View latest job’s workflow ↗</Link></p>}
         {latest?.error && <p className="office-errorText">{latest.error.code}: {latest.error.message}</p>}
-        {latest?.report && <section className="office-workerReport" aria-label="Saved worker report">
+        {latest?.report && <details id="worker-report-details" className="office-reportDetails"><summary>Saved report · {latest.report.mode === "sample" ? "SAMPLE fixture" : latest.report.mode.toUpperCase()}</summary><section id="worker-saved-report" tabIndex={-1} className="office-workerReport" aria-label="Saved worker report">
           <h3>{latest.report.body.type === "camera_incident" && latest.report.body.incident.status === "open" ? "Report ready · incident still open" : "Report ready"}</h3>
           <ModeBadge mode={latest.report.mode} /><p className="office-jobMeta">{latest.report.summary}</p>
           {latest.report.body.type === "supplier_lookup" ? <SupplierReport result={latest.report.body.result} /> : <CameraIncidentReport incident={latest.report.body.incident} />}
-        </section>}
+        </section></details>}
       </div>
     </>
   );

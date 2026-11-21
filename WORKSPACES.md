@@ -106,3 +106,35 @@ checks verified hire/assignment/report movement, saved report selection,
 workspace hiring, preserved Dispatcher drafts, reload, and zero furniture
 collisions across more than 2,000 sampled positions. Auth0-hosted login with two
 real accounts remains a manual check using the steps above.
+
+
+## Original worker characters
+
+Milo (Dispatcher), Inez (Quality Inspector), Ro (Procurement Researcher), and Kit
+(Catalog Assistant) have original SVG pixel geometry, unique silhouettes and accent
+colors. The same artwork appears on the map, in marketplace cards, and as profile
+portraits. All four have north/east/south/west poses with a four-frame walk cycle.
+The walker selects direction from each actual route segment and retains furniture
+clearance; reduced motion shows a still pose and skips travel and gestures.
+
+Milo gives a small greeting wave at reception. Inez's clipboard tick and Ro's
+notebook page turn run from saved working events, pause during walking, and do not
+simulate work or alter task execution. Inez gives a short check gesture and Ro turns a notebook page when a
+report arrives. Idle workers do not pretend to run tasks.
+
+Click or tap a worker to open a compact profile with their portrait, name, role,
+skills, saved hourly rate, and current task. Their voice is chosen from saved job
+state. Inez only says she is waiting for a fresh frame when the current saved
+incident is open in `awaiting_frame`; a completed report alone never implies the
+incident is fixed. Ro explicitly calls sample findings fixture data. **View report**
+opens the saved report in one click, retaining SAMPLE / SIMULATED labels and the
+workspace-scoped workflow link. The Dispatcher profile retains the existing intake
+form and its draft when moving between profiles.
+
+Character verification: 127 tests, lint, TypeScript and the production build pass.
+Authenticated desktop/mobile browser checks verified all four route facings,
+compact named profiles, one-click report opening, notebook report gestures, the
+conditional fresh-frame voice line, hire/assignment/report movement, preserved
+Dispatcher drafts, reduced motion, reset and resize. 2,070 rendered positions
+were sampled with zero furniture collisions. Two-account direct office and
+workflow ownership checks still pass with independent SDK fixture sessions.

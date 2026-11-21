@@ -291,3 +291,14 @@
 .office-viewer { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-left: 8px; }
 .office-viewer strong { color: var(--ink); font-weight: 600; }
 .office-viewer a { text-decoration: none; color: var(--ink); }
+
+.office-characterIdentity { display: flex; gap: 16px; align-items: center; }
+.office-characterIdentity h3 { margin: 0 0 5px; font-size: 22px; font-weight: 650; letter-spacing: -.5px; }
+.office-characterIdentity p { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.office-characterVoice { margin: 18px 0; padding: 12px 14px; background: #f4f2e9; border-left: 3px solid #728b78; border-radius: 0 5px 5px 0; font-size: 13px; line-height: 1.65; color: #384e49; }
+.office-viewReport { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid #42665b; border-radius: 6px; background: #42665b; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; margin: 0 0 20px; min-height: 44px; }
+.office-viewReport:hover { background: #304f46; }
+.office-viewReport:focus-visible, .office-reportDetails > summary:focus-visible { outline: 3px solid #a34f2e; outline-offset: 3px; }
+.office-reportDetails { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; }
+.office-reportDetails > summary { cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.6; min-height: 32px; }
+.office-workerReport:focus { outline: none; }

@@ -1,4 +1,5 @@
 import { mapObstacles, nearestWalkable, stopPoint, walkingRoute, type MapSize, type MapStop, type Point } from "@/lib/workplace/office-map";
+import { walkFacing } from "@/lib/workplace/characters";
 import type { WorkerMovement } from "@/lib/workplace/movement";
 
 /** A visual queue of observed events. This never changes a job, its runtime, or billing. */
@@ -63,6 +64,7 @@ export class OfficeWalker {
     this.element.style.left = `${this.position.x / this.size.width * 100}%`;
     this.element.style.top = `${this.position.y / this.size.height * 100}%`;
     this.element.dataset.positioned = "true";
+    this.element.dataset.facing = "south";
     this.element.dataset.mapStop = this.location;
     this.element.dataset.travel = "idle";
   }
@@ -88,14 +90,21 @@ export class OfficeWalker {
       this.element.dataset.destination = stop;
       if (total > 0 && !this.preference.matches) {
         this.element.dataset.travel = "walking";
-        let distance = 0;
-        const keyframes = route.map((point, index) => {
-          distance += distances[index];
-          return { left: `${point.x / this.size.width * 100}%`, top: `${point.y / this.size.height * 100}%`, offset: distance / total };
-        });
-        this.animation = this.element.animate(keyframes, { duration: total / 165 * 1000, easing: "linear", fill: "forwards" });
-        try { await this.animation.finished; } catch { return; }
-        if (generation !== this.generation || this.disposed) return;
+        for (let index = 1; index < route.length; index++) {
+          const from = route[index - 1], to = route[index];
+          this.element.dataset.facing = walkFacing(from, to);
+          this.animation = this.element.animate([
+            { left: `${from.x / this.size.width * 100}%`, top: `${from.y / this.size.height * 100}%` },
+            { left: `${to.x / this.size.width * 100}%`, top: `${to.y / this.size.height * 100}%` },
+          ], { duration: distances[index] / 165 * 1000, easing: "linear", fill: "forwards" });
+          try { await this.animation.finished; } catch { return; }
+          if (generation !== this.generation || this.disposed) return;
+          this.element.style.left = `${to.x / this.size.width * 100}%`;
+          this.element.style.top = `${to.y / this.size.height * 100}%`;
+          this.animation.cancel(); this.animation = null;
+          // Respect a preference changed during a route, not only at its start.
+          if (this.preference.matches) break;
+        }
       }
       this.position = target; this.location = stop; this.active = null;
       this.place(); this.animation?.cancel(); this.animation = null;

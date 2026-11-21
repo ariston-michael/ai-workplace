@@ -5,14 +5,13 @@ import { DISPATCHER } from "@/lib/workplace/catalog";
 import { MAP_WIDTH, MAP_HEIGHT, MAP_STATIONS, MAP_DECOR, RECEPTION, type Rect, type MapSize } from "@/lib/workplace/office-map";
 import { workerMovement } from "@/lib/workplace/movement";
 import type { HireView, JobView } from "@/lib/workplace/types";
+import PixelCharacter from "./pixel-character";
+import { CHARACTERS, characterId } from "@/lib/workplace/characters";
 import { OfficeWalker } from "./office-walker";
 import "./office-map.css";
 
 const rectStyle = (rect: Rect): CSSProperties => ({ left: `${rect.x / MAP_WIDTH * 100}%`, top: `${rect.y / MAP_HEIGHT * 100}%`, width: `${rect.width / MAP_WIDTH * 100}%`, height: `${rect.height / MAP_HEIGHT * 100}%` });
 
-function Sprite({ color }: { color: string }) {
-  return <span className={`office-mapSprite office-mapSprite-${color}`} aria-hidden="true"><i className="office-mapHair" /><i className="office-mapFace" /><i className="office-mapShirt" /><i className="office-mapFeet" /></span>;
-}
 
 function Desk({ desk, chair, role, label, status, color, selected, onClick }: {
   desk: Rect; chair: Rect; role?: string; label: string; status?: string; color?: string; selected: boolean; onClick: () => void;
@@ -21,7 +20,7 @@ function Desk({ desk, chair, role, label, status, color, selected, onClick }: {
     aria-pressed={selected} aria-controls="office-panel" aria-label={role ? `${label}: ${role}${status ? `, ${status}` : ""}. View role and status` : `${label}, empty desk: open marketplace`}>
     <span className="office-mapChair" data-furniture={chair.id} aria-hidden="true" style={{ left: `${(chair.x - desk.x) / desk.width * 100}%`, top: `${(chair.y - desk.y) / desk.height * 100}%`, width: `${chair.width / desk.width * 100}%`, height: `${chair.height / desk.height * 100}%` }} />
     <span className="office-mapDesk" data-furniture={desk.id} aria-hidden="true"><span className="office-mapMonitor" /><span className="office-mapKeyboard" /><span className="office-mapNotebook" /><span className="office-mapCup" /></span>
-    {color && <span className="office-mapDispatcher" aria-hidden="true"><Sprite color={color} /></span>}
+    {color && <span className="office-mapDispatcher" aria-hidden="true"><PixelCharacter id="dispatcher" gesture="wave" /></span>}
     {!role && <span className="office-mapAdd" aria-hidden="true">+</span>}
     <span className="office-mapStationLabel"><strong>{role ?? "Your next teammate"}</strong><small>{label} · {status ?? (role ? "Ready" : "hire a worker")}</small></span>
   </button>;
@@ -45,8 +44,8 @@ function Worker({ hire, jobs, size, arriving, selected, onClick }: {
   const report = movement.kind === "returned";
   const label = report ? "Report ready. Read saved report" : movement.kind === "failed" ? "Returned with an error. View outcome" : movement.kind === "working" ? "Working on a job" : movement.kind === "assigned" ? "Assigned to workstation" : "View worker";
   return <button ref={button} type="button" className="office-mapWalker" data-worker-id={hire.id} data-desk={hire.desk} data-movement={movement.kind}
-    aria-label={`${hire.role}: ${label}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
-    <Sprite color={hire.color} />
+    aria-label={`${hire.role}: ${label} · ${CHARACTERS[characterId(hire.profileId)].name}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
+    <PixelCharacter key={movement.eventKey} id={characterId(hire.profileId)} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
     {report && <span className="office-mapReportBadge" aria-hidden="true">▤</span>}
     {movement.kind === "failed" && <span className="office-mapReportBadge" aria-hidden="true">!</span>}
     <span className="office-mapWorkerLabel">{hire.role}{report ? " · Report ready" : ""}</span>
