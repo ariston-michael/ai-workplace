@@ -15,13 +15,13 @@ const rectStyle = (rect: Rect): CSSProperties => ({ left: `${rect.x / MAP_WIDTH 
 function Desk({ desk, chair, role, label, status, color, selected, onClick }: {
   desk: Rect; chair: Rect; role?: string; label: string; status?: string; color?: string; selected: boolean; onClick: () => void;
 }) {
-  return <button type="button" className={`office-mapStation ${role ? "" : "office-mapVacant"}`} style={rectStyle(desk)} onClick={onClick}
+  return <button type="button" className={`office-mapStation ${color ? "office-mapReception" : ""} ${role ? "" : "office-mapVacant"}`} style={rectStyle(desk)} onClick={onClick}
     aria-pressed={selected} aria-controls="office-panel" aria-label={role ? `${label}: ${role}${status ? `, ${status}` : ""}. View role and status` : `${label}, empty desk: open marketplace`}>
     <span className="office-mapChair" data-furniture={chair.id} aria-hidden="true" style={{ left: `${(chair.x - desk.x) / desk.width * 100}%`, top: `${(chair.y - desk.y) / desk.height * 100}%`, width: `${chair.width / desk.width * 100}%`, height: `${chair.height / desk.height * 100}%` }} />
-    <span className="office-mapDesk" data-furniture={desk.id} aria-hidden="true"><span className="office-mapMonitor" /><span className="office-mapKeyboard" /><span className="office-mapNotebook" /><span className="office-mapCup" /></span>
+    <span className="office-mapDesk" data-furniture={desk.id} aria-hidden="true"><span className="office-mapMonitor" /><span className="office-mapKeyboard" /><span className="office-mapNotebook" /><span className="office-mapCup" /><span className="office-mapFiles" /><span className="office-mapDeskLamp" /></span>
     {color && <span className="office-mapDispatcher" aria-hidden="true"><PixelCharacter id="dispatcher" gesture="wave" /></span>}
     {!role && <span className="office-mapAdd" aria-hidden="true">+</span>}
-    <span className="office-mapStationLabel"><strong>{role ?? "Your next teammate"}</strong><small>{label} · {status ?? (role ? "Ready" : "hire a worker")}</small></span>
+    <span className="office-mapStationLabel"><strong>{color ? "RECEPTION" : label.toUpperCase()}</strong><small>{role ?? "Vacant · hire"}</small></span>
   </button>;
 }
 
@@ -73,7 +73,9 @@ export default function OfficeMap({ team, leaving, onGone, jobs, loaded, arrival
   }, []);
 
   return <div ref={floor} className="office-floor office-pixelMap" aria-label="Office map with walkable aisles">
-    <span className="office-mapRoomLabel">THE WORKROOM</span>
+    <div className="office-mapWall" aria-hidden="true" />
+    <span className="office-mapRoomLabel">WORK / PLAY / REPEAT</span>
+    {MAP_STATIONS.map(station => <span key={station.id} className="office-mapCubicleFloor" aria-hidden="true" style={{ left: `${(station.desk.x - 30) / 10}%`, top: `${(station.desk.y - 97) / 7.2}%`, width: "27%", height: "31%" }} />)}
     <span className="office-mapAisle office-mapAisle-vertical" aria-hidden="true" /><span className="office-mapAisle office-mapAisle-horizontal" aria-hidden="true" />
     {MAP_DECOR.map(rect => <span key={rect.id} data-furniture={rect.id} className={`office-mapDecor office-mapDecor-${rect.id}`} style={rectStyle(rect)} aria-hidden="true">{rect.id.startsWith("plant") && <i />}</span>)}
     {MAP_STATIONS.map(station => {
@@ -84,8 +86,8 @@ export default function OfficeMap({ team, leaving, onGone, jobs, loaded, arrival
         selected={hire ? selectedHire === hire.id : selectedDesk === station.id} onClick={() => hire ? onWorker(hire.id) : onDesk(station.id)} />;
     })}
     <Desk desk={RECEPTION.desk} chair={RECEPTION.chair} role={DISPATCHER.role} label="Reception" status="Entrance" color={DISPATCHER.color} selected={dispatcherSelected} onClick={onDispatcher} />
-    <span className="office-mapReceptionLabel">RECEPTION</span>
-    <span className="office-mapDoor" aria-hidden="true" /><span className="office-mapEntranceLabel">ENTRANCE ↑</span>
+    <span className="office-mapReceptionLabel">WELCOME / DISPATCH</span>
+    <span className="office-mapDoor" aria-hidden="true" /><span className="office-mapEntranceLabel">ENTER ↑</span>
     {loaded && size && [...team, ...leaving.filter(l => !team.some(t => t.id === l.id))].map(hire => <Worker key={hire.id} hire={hire} jobs={jobs} size={size} arriving={arrivals.has(hire.id)} selected={selectedHire === hire.id}
       onClick={jobId => onWorker(hire.id, jobId)} onGone={() => onGone(hire.id)} />)}
   </div>;

@@ -94,6 +94,27 @@ try {
 
   const pageA = await alice.newPage(), pageB = await bob.newPage(), pageErrors = [];
   for (const p of [pageA, pageB]) p.on("pageerror", e => pageErrors.push(e.message));
+  await pageB.addInitScript(() => {
+    window.__retroTrace = []; window.__retroCollisions = [];
+    const ownChair = { "workstation-01": "chair-inspector", "desk-02": "chair-02", "desk-03": "chair-03" };
+    let frame = 0;
+    const tick = () => {
+      const floor = document.querySelector(".office-pixelMap");
+      if (floor && frame++ % 2 === 0) {
+        const furniture = [...floor.querySelectorAll("[data-furniture]")].map(el => ({ id: el.dataset.furniture, rect: el.getBoundingClientRect() }));
+        for (const el of floor.querySelectorAll('[data-worker-id][data-positioned="true"]')) {
+          const rect = el.querySelector(".office-mapSprite").getBoundingClientRect();
+          window.__retroTrace.push({ id: el.dataset.workerId, stop: el.dataset.mapStop, travel: el.dataset.travel, destination: el.dataset.destination, facing: el.dataset.facing });
+          for (const item of furniture) {
+            if (item.id === ownChair[el.dataset.desk]) continue;
+            if (Math.min(rect.right, item.rect.right) - Math.max(rect.left, item.rect.left) > .75 && Math.min(rect.bottom, item.rect.bottom) - Math.max(rect.top, item.rect.top) > .75 && window.__retroCollisions.length < 20) window.__retroCollisions.push({ worker: el.dataset.workerId, furniture: item.id });
+          }
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 
   console.log("\n== Alice publishes an inventory agent with the sprite builder");
   await pageA.goto(base + "/marketplace");
@@ -187,6 +208,9 @@ try {
   ok(sawDoor, "job-only worker then walks out the door");
   await pageB.locator(`[data-worker-id="${roId}"]`).waitFor({ state: "detached", timeout: 15000 });
   ok(true, "job-only worker is gone from the map");
+  const temporaryTrace = await pageB.evaluate(() => ({ trace: window.__retroTrace, collisions: window.__retroCollisions }));
+  ok(temporaryTrace.trace.some(e => e.id === roId && e.stop === "reception" && e.travel === "handover"), "job-only report handover is visible before exit");
+  ok(temporaryTrace.collisions.length === 0, "larger workers clear all desks and cubicle walls", JSON.stringify(temporaryTrace.collisions));
   await shot(pageB, "4-after-departure");
   const stateB = await (await bob.request.get(base + `/api/workspaces/${wsB}`)).json();
   const roFormer = stateB.state.formerHires.find(h => h.id === roId);
@@ -224,9 +248,28 @@ try {
   }
   ok(visitedReception && backAtDesk, "kept worker returns to reception, then its desk");
   ok((await ro2.getAttribute("data-retention")) === "team", "worker is kept on the team");
+  const retainedTrace = await pageB.evaluate(() => ({ trace: window.__retroTrace, collisions: window.__retroCollisions }));
+  ok(retainedTrace.trace.some(e => e.id === ro2Id && e.stop === "reception" && e.travel === "handover"), "retained worker visibly hands over the report");
+  ok(retainedTrace.collisions.length === 0, "retained worker avoids cubicle walls on its return", JSON.stringify(retainedTrace.collisions));
+  await pageB.locator('.office-mapStation:has([data-furniture="desk-03"])').click();
+  await pageB.getByRole("region", { name: "Desk details", exact: true }).waitFor();
+  ok(/Occupied/.test(await pageB.getByRole("region", { name: "Desk details", exact: true }).innerText()), "clicking an occupied cubicle opens desk details");
+  await pageB.getByRole("button", { name: /^Reception: Dispatcher/ }).click();
+  ok(await pageB.evaluate(() => visualViewport.scale === 1 && Number(getComputedStyle(document.documentElement).zoom) === 1), "office preview uses normal 100% zoom");
+  ok(await ro2.locator(".office-mapSprite").evaluate(el => Math.round(el.getBoundingClientRect().width) === 39), "workers are 50% larger on the map");
+  console.log("Preview build:", await pageB.locator(".office-office").getAttribute("data-preview-branch"), await pageB.locator(".office-office").getAttribute("data-preview-commit"));
+  await pageB.waitForFunction(() => [...document.querySelectorAll(".office-mapWalker")].every(el => el.dataset.mapStop === "workstation" && el.dataset.travel === "idle"), { timeout: 30000 });
+  if (shots) {
+    await pageB.locator(".office-officeCard").screenshot({ path: path.join(shots, "office-retro-full.png") });
+    await pageB.evaluate(() => scrollTo(0, 0));
+    await pageB.screenshot({ path: path.join(shots, "office-retro-desktop.png") });
+  }
   await pageB.getByLabel("What do you need help with?").fill("Find a Raspberry Pi 5 4GB on Adafruit please");
+  const reuseResponse = pageB.waitForResponse(r => r.url().endsWith(`/api/workspaces/${wsB}/jobs`) && r.request().method() === "POST");
   await pageB.getByRole("button", { name: /Send to Dispatcher/ }).click();
-  await pageB.getByText(/Understood as Supplier research/).waitFor();
+  const reusedJob = await (await reuseResponse).json();
+  await pageB.locator(`.office-jobCard[data-job-id="${reusedJob.jobId}"]`).waitFor();
+  await pageB.waitForFunction(() => document.querySelector(".office-requestDock textarea")?.value === "");
   const reuse = (await (await bob.request.get(base + `/api/workspaces/${wsB}`)).json()).state.jobs[0];
   ok(reuse.hireId === ro2Id && reuse.status !== "needs_worker", "the kept worker is reused first, no new hire", reuse.status);
 

@@ -6,7 +6,7 @@ for (const size of [{ width: 760, height: 544 }, { width: 540, height: 544 }, { 
   test(`walking routes clear furniture at ${size.width} × ${size.height}`, () => {
     for (const station of MAP_STATIONS) {
       const obstacles = mapObstacles(station.id, size);
-      for (const [from, to] of [["door", "workstation"], ["workstation", "reception"], ["reception", "workstation"]] as [MapStop, MapStop][]) {
+      for (const [from, to] of [["door", "workstation"], ["workstation", "reception"], ["reception", "workstation"], ["reception", "door"]] as [MapStop, MapStop][]) {
         const start = stopPoint(from, station.id, size), end = stopPoint(to, station.id, size);
         const route = walkingRoute(start, end, obstacles, size);
         assert.ok(route.length > 1, `${station.id}: ${from} → ${to} must have a route`);
@@ -20,9 +20,8 @@ for (const size of [{ width: 760, height: 544 }, { width: 540, height: 544 }, { 
   });
 }
 
-test("desks are approximately 15% narrower than the prior map", () => {
-  const priorWidth = 1000 * .42 * .82;
-  for (const station of MAP_STATIONS) assert.ok(station.desk.width / priorWidth > .83 && station.desk.width / priorWidth < .86);
+test("compact desks leave the central aisle open for larger characters", () => {
+  for (const station of MAP_STATIONS) assert.ok(station.desk.width <= 220);
 });
 
 test("a blocked route never falls back to a straight line through furniture", () => {

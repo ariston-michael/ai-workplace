@@ -7,20 +7,27 @@ export const MAP_WIDTH = 1000;
 export const MAP_HEIGHT = 720;
 
 export const MAP_STATIONS = [
-  { id: "workstation-01", label: "Workstation 01", desk: { id: "desk-inspector", x: 130, y: 190, width: 290, height: 75 }, chair: { id: "chair-inspector", x: 240, y: 128, width: 70, height: 50 }, seat: { x: 275, y: 150 }, report: { x: 500, y: 520 } },
-  { id: "desk-02", label: "Desk 02", desk: { id: "desk-02", x: 590, y: 190, width: 290, height: 75 }, chair: { id: "chair-02", x: 700, y: 128, width: 70, height: 50 }, seat: { x: 735, y: 150 }, report: { x: 500, y: 585 } },
-  { id: "desk-03", label: "Desk 03", desk: { id: "desk-03", x: 590, y: 505, width: 290, height: 75 }, chair: { id: "chair-03", x: 700, y: 443, width: 70, height: 50 }, seat: { x: 735, y: 465 }, report: { x: 500, y: 650 } },
+  { id: "workstation-01", label: "Cubicle 01", desk: { id: "desk-inspector", x: 120, y: 220, width: 210, height: 85 }, chair: { id: "chair-inspector", x: 195, y: 150, width: 60, height: 50 }, seat: { x: 225, y: 175 }, report: { x: 500, y: 470 } },
+  { id: "desk-02", label: "Cubicle 02", desk: { id: "desk-02", x: 670, y: 220, width: 210, height: 85 }, chair: { id: "chair-02", x: 745, y: 150, width: 60, height: 50 }, seat: { x: 775, y: 175 }, report: { x: 500, y: 560 } },
+  { id: "desk-03", label: "Cubicle 03", desk: { id: "desk-03", x: 670, y: 545, width: 210, height: 85 }, chair: { id: "chair-03", x: 745, y: 475, width: 60, height: 50 }, seat: { x: 775, y: 500 }, report: { x: 500, y: 650 } },
 ] as const;
-export const RECEPTION = { desk: { id: "reception", x: 130, y: 535, width: 290, height: 75 }, chair: { id: "chair-dispatcher", x: 240, y: 470, width: 70, height: 50 }, seat: { x: 275, y: 495 } };
+export const RECEPTION = { desk: { id: "reception", x: 110, y: 565, width: 235, height: 70 }, chair: { id: "chair-dispatcher", x: 205, y: 490, width: 60, height: 50 }, seat: { x: 235, y: 515 } };
 export const MAP_DECOR: Rect[] = [
-  { id: "partition", x: 600, y: 395, width: 400, height: 12 },
-  { id: "plant-north", x: 915, y: 45, width: 55, height: 55 },
-  { id: "plant-south", x: 40, y: 630, width: 60, height: 60 },
-  { id: "window", x: 300, y: 0, width: 400, height: 22 },
+  { id: "wall-01-north", x: 90, y: 110, width: 270, height: 12 },
+  { id: "wall-01-side", x: 78, y: 110, width: 12, height: 215 },
+  { id: "wall-02-north", x: 640, y: 110, width: 270, height: 12 },
+  { id: "wall-02-side", x: 910, y: 110, width: 12, height: 215 },
+  { id: "wall-03-north", x: 640, y: 435, width: 270, height: 12 },
+  { id: "wall-03-side", x: 910, y: 435, width: 12, height: 215 },
+  { id: "plant-north", x: 920, y: 25, width: 50, height: 55 },
+  { id: "plant-south", x: 25, y: 610, width: 50, height: 55 },
+  { id: "window", x: 350, y: 8, width: 300, height: 52 },
+  { id: "console", x: 70, y: 15, width: 120, height: 65 },
+  { id: "notice", x: 750, y: 18, width: 90, height: 52 },
 ];
 
-// The sprite is 26 × 30 CSS pixels; add space for its outline and furniture shadows.
-export const WALK_CLEARANCE = { x: 17, y: 19 };
+// Map-only characters are 39 × 45 CSS px; clearance includes outlines/shadows.
+export const WALK_CLEARANCE = { x: 23, y: 26 };
 export function mapPoint(point: Point, size: MapSize): Point {
   return { x: point.x * size.width / MAP_WIDTH, y: point.y * size.height / MAP_HEIGHT };
 }
@@ -31,7 +38,7 @@ export function workstation(desk: string) {
   return MAP_STATIONS.find(station => station.id === desk) ?? MAP_STATIONS[0];
 }
 export function stopPoint(stop: MapStop, desk: string, size: MapSize): Point {
-  if (stop === "door") return { x: size.width * .275, y: size.height - WALK_CLEARANCE.y };
+  if (stop === "door") return { x: size.width * .5, y: size.height - WALK_CLEARANCE.y };
   return mapPoint(stop === "reception" ? workstation(desk).report : workstation(desk).seat, size);
 }
 export function mapObstacles(desk: string, size: MapSize): Rect[] {

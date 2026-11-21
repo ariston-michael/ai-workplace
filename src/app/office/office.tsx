@@ -29,9 +29,9 @@ const apiBase = (ws: string) => `/api/workspaces/${encodeURIComponent(ws)}`;
 type Selection = null | "dispatcher" | { hireId: string; jobId?: string } | { desk: string };
 
 const DESKS = [
-  { desk: "workstation-01", label: "Workstation 01", className: "office-inspection" },
-  { desk: "desk-02", label: "Desk 02", className: "office-openDesk" },
-  { desk: "desk-03", label: "Desk 03", className: "office-deskThree" },
+  { desk: "workstation-01", label: "Cubicle 01", className: "office-inspection" },
+  { desk: "desk-02", label: "Cubicle 02", className: "office-openDesk" },
+  { desk: "desk-03", label: "Cubicle 03", className: "office-deskThree" },
 ] as const;
 
 const STATUS_LABEL: Record<JobStatus, string> = {
@@ -302,7 +302,7 @@ function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arriv
   const openDesks = DESKS.filter(d => !hireAt(d.desk)).length;
 
   return (
-    <main className="office-office">
+    <main className="office-office" data-preview-branch={process.env.NEXT_PUBLIC_PREVIEW_BRANCH} data-preview-commit={process.env.NEXT_PUBLIC_PREVIEW_COMMIT}>
       <header className="office-header">
         <Link className="office-brand" href="/"><span className="office-logo" aria-hidden="true">a<span>i</span></span> AI Workplace</Link>
         <OfficeSwitcher current={workspaceId} currentName={state?.workspace.name} />
@@ -347,6 +347,7 @@ function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arriv
               <>
                 <div className="office-panelHeader"><p className="office-eyebrow">FIND YOUR NEXT TEAMMATE</p><h2 id="panel-title" ref={panelHeading} tabIndex={-1}>The marketplace</h2></div>
                 <div className="office-panelBody">
+                  <DeskDetails desk={selectedDesk} />
                   <p className="office-muted">Hire a worker for {DESKS.find(d => d.desk === selectedDesk)?.label}. Hiring is saved and later jobs that need the worker’s skill go to it.</p>
                   <Link className="office-marketLink" href={marketplaceHref({ workspace: workspaceId })}>Browse the full marketplace: official and community agents <span aria-hidden="true">↗</span></Link>
                   {state.marketplace.map(p => <CandidateCard key={p.id} profile={p} hired={p.hired} onHire={() => hire(p.id)} />)}
@@ -692,6 +693,14 @@ function SupplierReport({ result }: { result: LookupResult }) {
   );
 }
 
+function DeskDetails({ desk, hire }: { desk: string; hire?: HireView }) {
+  return <section className="office-deskDetails" aria-label="Desk details">
+    <h3>{DESKS.find(item => item.desk === desk)?.label ?? "Workstation"} · {hire ? hire.departedAt ? "Vacant" : "Occupied" : "Vacant"}</h3>
+    <p>CRT display · keyboard · task notebook · filing tray · desk lamp</p>
+    <p>{hire ? `${hire.characterName} / ${hire.role}. ${hire.retention === "job" ? "Hired for one job; reports at reception, then leaves." : "Retained on the team; reports at reception, then returns here."}` : "Ready for a new teammate. Review skills and permissions before hiring."}</p>
+  </section>;
+}
+
 function WorkerPanel({ hire, state, headingRef, reportJobId, onUpdate, onRun }: {
   hire: HireView; state: WorkplaceState; reportJobId?: string; headingRef: React.RefObject<HTMLHeadingElement | null>;
   onUpdate: (change: HireTerms) => Promise<string | null>; onRun: (next: WorkplaceState) => void;
@@ -711,6 +720,7 @@ function WorkerPanel({ hire, state, headingRef, reportJobId, onUpdate, onRun }: 
         <div className="office-characterIdentity"><PixelCharacter sprite={hire.sprite} portrait /><div><h3>{hire.characterName}</h3><p>{hire.role}</p><ListingBadge kind={hire.listingKind} publisher={hire.publisherName} /><span className="office-status"><span /> {status}</span></div></div>
         <blockquote className="office-characterVoice">“{workerVoice(hire, active ?? jobs[0], hire.greeting)}”</blockquote>
         {latest?.report && <a className="office-viewReport" href="#worker-saved-report" onClick={event => { event.preventDefault(); const report = document.getElementById("worker-report-details") as HTMLDetailsElement | null; if (report) { report.open = true; document.getElementById("worker-saved-report")?.focus(); } }}>View report <span aria-hidden="true">↗</span></a>}
+        <DeskDetails desk={hire.desk} hire={hire} />
         <h3 className="office-sectionLabel">SKILLS</h3><ul className="office-skills">{hire.skills.map(s => <li key={s}>{SKILLS[s]}</li>)}</ul>
         <dl className="office-details">
           <div><dt>Demo hourly rate</dt><dd>{formatRate(hire.hourlyRateCents)}</dd></div>
