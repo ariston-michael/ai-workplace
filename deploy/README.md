@@ -106,4 +106,57 @@ sessions and a temporary SQLite file. It verifies simulated request→approval�
 credentials, and report persistence after restarting the server. Existing SMS and
 office suites continue to test the real signed webhook using local API mocks.
 Hosted Auth0 sign-in, DNS, public certificate issuance, and real Vultr storage
-remain deployment checks. The Mac's existing port 3001 demo is left running.
+remain deployment checks. The Mac's existing port 3003 demo fallback is left running.
+
+
+## Proposed new instance — approval required
+
+Checked against the public Vultr plans API on 2026-11-21:
+
+- High Frequency `vhf-1c-2gb`, preferred region Toronto (`yto`).
+- 1 vCPU, 2 GB RAM, 64 GB local storage, 2048 GB monthly bandwidth.
+- Ubuntu 24.04 LTS x64 (`os_id=2284`), matching the tested amd64 image.
+- Base price: **US$12/month** or **US$0.016/hour** before tax and extras.
+- No paid backup, block volume, load balancer, managed database, reserved IP,
+  domain purchase or other paid add-on is approved. No instance has been created.
+
+`vultr-proposal.json` is an inert proposal, not a provisioning command. Confirm
+account/region availability and the exact checkout total, then ask the user for
+explicit approval before any billable API call. Do not treat a request to keep
+preparing, a saved API key, or the passage of time as spending approval.
+
+For this small demo, build the amd64 image locally and transfer it over SSH, then
+load it on the instance. This avoids compiling Next.js on a 2 GB server. Keep a
+single app process, Caddy and SQLite on the included local disk; the existing host
+bind mount preserves data across app/container replacement. VPS deletion still
+requires a separate off-host backup if data must be retained.
+
+### HTTPS and identity setup to collect before provisioning
+
+1. A Vultr account with billing enabled, permission to provision the approved
+   server, and the Mac's public SSH key registered. Never paste private keys or
+   API tokens into chat; use ignored local configuration.
+2. A hostname the user controls (for example `office.yourdomain.com`) and DNS
+   access. After instance approval/provisioning, point its A record to the assigned
+   public IPv4 address; open inbound TCP 80/443 and restrict SSH appropriately.
+   Caddy obtains/renews a publicly trusted certificate once DNS is ready. No paid
+   certificate is required. A new domain purchase requires separate approval.
+3. Access to the existing Auth0 Regular Web Application settings. Add the exact
+   public URLs below while preserving the port-3003 fallback entries:
+
+   | Setting | Public | Demo fallback |
+   | --- | --- | --- |
+   | Allowed Callback URLs | `https://<hostname>/auth/callback` | `http://localhost:3003/auth/callback` |
+   | Allowed Logout URLs | `https://<hostname>` | `http://localhost:3003` |
+   | Allowed Web Origins | `https://<hostname>` | `http://localhost:3003` |
+
+   Server-only Auth0 domain/client ID/client secret go in the protected env file.
+   Generate a separate production `AUTH0_SECRET`; set `APP_BASE_URL` to exactly
+   `https://<hostname>`. Gemini is optional and has separate provider usage costs;
+   omit its key to keep this demo on the built-in Dispatcher rules. No live
+   TinyFish/Twilio credentials are needed.
+
+Read-only sources: https://api.vultr.com/v2/plans,
+https://api.vultr.com/v2/os,
+https://caddyserver.com/docs/automatic-https,
+https://github.com/auth0/nextjs-auth0/blob/main/README.md.
