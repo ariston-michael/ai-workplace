@@ -6,6 +6,7 @@ import WorkspaceDashboard, { type WorkspaceCard } from "./dashboard";
 
 
 export default function DashboardLoader() {
+  const [viewer, setViewer] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export default function DashboardLoader() {
         const response = await fetch("/api/workspaces", { cache: "no-store", signal: controller.signal });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error?.message ?? "Saved workspaces could not be loaded.");
+        setViewer(data.viewer?.name ?? data.viewer?.email ?? "you");
         setWorkspaces(data.workspaces.map((workspace: WorkspaceSummary) => ({
           id: workspace.id, name: workspace.name, workerCount: workspace.teamSize,
           jobCount: workspace.totalJobs, activeJobCount: workspace.openJobs,
@@ -49,5 +51,5 @@ export default function DashboardLoader() {
     }
   }
 
-  return <WorkspaceDashboard workspaces={workspaces} loading={loading} error={error} onRefresh={refresh} onCreate={create} />;
+  return <WorkspaceDashboard viewer={viewer} workspaces={workspaces} loading={loading} error={error} onRefresh={refresh} onCreate={create} />;
 }

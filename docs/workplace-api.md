@@ -2,11 +2,20 @@
 
 For anyone building UI on top of the workplace service (e.g. the office UI). Source of truth for types: [src/lib/workplace/types.ts](../src/lib/workplace/types.ts). Schema: [src/lib/workplace/db.server.ts](../src/lib/workplace/db.server.ts).
 
+## Sign-in and ownership
+
+- Auth0 login via `@auth0/nextjs-auth0` v4. The proxy ([src/proxy.ts](../src/proxy.ts)) mounts `/auth/login`, `/auth/logout`, `/auth/callback`, `/auth/profile`. Link to them with plain `<a href>`, not `next/link`. `/auth/login?returnTo=/office` returns the user to the office after sign-in.
+- Pages `/office` and `/procurement` redirect signed-out visitors to `/auth/login?returnTo=<page>`. `/` and `/simulator/camera` stay public.
+- **Every** API route below (including the legacy `/api/workplace/*` routes and `/api/procurement/lookup`) requires a session and answers `401 UNAUTHENTICATED` without one. The browser sends the session cookie automatically; no token handling is needed in UI code.
+- Each workspace has one owner (the Auth0 user `sub`). A user can only list, read or change their own workspaces. Someone else's workspace answers `404 WORKSPACE_NOT_FOUND`, exactly like a missing one.
+- On first sign-in a user gets a personal office ("<first name>’s office").
+- Offices created before sign-in existed (the migrated demo data) have no owner and are hidden. They are claimed by the user who signs in with the verified email in `WORKPLACE_DEMO_OWNER_EMAIL`.
+
 ## Concepts
 
 - **Workspace** = one office. Every hire, job, job event, report and simulator setting belongs to exactly one workspace. Hiring, resetting or changing settings in one workspace never touches another.
-- **`default`** is always present. Data from before multi-workspace support (schema v1) was migrated into it.
-- The `/office` page selects a workspace with `?workspace=<id>` (missing → `default`).
+- **`default`** holds the data migrated from before multi-workspace support. It belongs to the demo owner once claimed.
+- The `/office` page selects a workspace with `?workspace=<id>`. Without it, `/office` opens the user's **primary** office (their `default` office if they own it, else their oldest office).
 - Procurement runs on a **SAMPLE fixture** unless the server has `PROCUREMENT_MODE=live`. Camera jobs are always **SIMULATED**. Reports carry `mode` so the UI can label them: `live` | `sample` | `simulated`.
 
 ## Routes
@@ -15,17 +24,17 @@ All bodies are JSON. Errors are always `{ ok: false, error: { code, message } }`
 
 | Method | Path | Body | Success response |
 |---|---|---|---|
-| GET | `/api/workspaces` | — | `{ ok, workspaces: WorkspaceSummary[] }` |
-| POST | `/api/workspaces` | `{ name }` (1–60 chars) | `201 { ok, workspace: WorkspaceSummary }` |
+| GET | `/api/workspaces` | — | `{ ok, viewer: { name, email }, primaryWorkspaceId, workspaces: WorkspaceSummary[] }` (only the caller's offices) |
+| POST | `/api/workspaces` | `{ name }` (1–60 chars) | `201 { ok, workspace: WorkspaceSummary }` (owned by the caller) |
 | GET | `/api/workspaces/{id}` | — | `{ ok, state: WorkplaceState }` |
 | POST | `/api/workspaces/{id}/jobs` | `{ clientRequestId, request, pending? }` | see **Submitting a request** |
 | POST | `/api/workspaces/{id}/hires` | `{ profileId, jobId? }` | `{ ok, hireId, created, state }` |
 | POST | `/api/workspaces/{id}/simulator` | `{ cameraFault }` | `{ ok, state }` |
 | POST | `/api/workspaces/{id}/reset` | — | `{ ok, state }` |
 
-Legacy aliases (same handlers, fixed to `default`): `GET /api/workplace`, `POST /api/workplace/{jobs,hires,simulator,reset}`. Prefer the `/api/workspaces/{id}` routes in new code.
+Legacy aliases (same handlers and checks, applied to the **caller's primary office**): `GET /api/workplace`, `POST /api/workplace/{jobs,hires,simulator,reset}`. Prefer the `/api/workspaces/{id}` routes in new code.
 
-`/api/procurement/lookup` is the standalone lookup test page's endpoint; it is not workspace-scoped and does not create jobs.
+`/api/procurement/lookup` is the standalone lookup test page's endpoint; it requires sign-in but is not workspace-scoped and does not create jobs.
 
 ### Submitting a request (`POST …/jobs`)
 
@@ -111,7 +120,8 @@ Desks are per workspace: every office has its own Workstation 01 (Quality Inspec
 
 | Code | Status | When |
 |---|---|---|
-| `WORKSPACE_NOT_FOUND` | 404 | unknown workspace id on any workspace route |
+| `UNAUTHENTICATED` | 401 | no valid Auth0 session (any API route) |
+| `WORKSPACE_NOT_FOUND` | 404 | unknown workspace id, **or one owned by another user** |
 | `INVALID_REQUEST` | 400 | bad JSON, bad `clientRequestId`, empty request, expired `pending` |
 | `INVALID_NAME` | 400 | office name not 1–60 chars |
 | `JOB_NOT_FOUND` | 404 | `jobId` not in this workspace (including another workspace's job) |
@@ -121,13 +131,13 @@ Desks are per workspace: every office has its own Workstation 01 (Quality Inspec
 | `UNKNOWN_FAULT` | 400 | bad `cameraFault` |
 | `UNKNOWN_SUPPLIER` | 400 | supplier not on the approved list |
 
-## Database (schema v2, `PRAGMA user_version = 2`)
+## Database (schema v3, `PRAGMA user_version = 3`)
 
-File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Opening a v1 file migrates it automatically after writing `<file>.v1-backup-<timestamp>`.
+File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Opening an older file migrates it automatically after writing `<file>.v<old version>-backup-<timestamp>`.
 
 | Table | Key columns | Scoping |
 |---|---|---|
-| `workspaces` | `id` (slug), `name`, `created_at` | — |
+| `workspaces` | `id` (slug), `name`, `created_at`, `owner_sub` (Auth0 `sub`; NULL = unclaimed) | owner |
 | `hires` | `id`, `workspace_id`, `profile_id`, `desk`, rate/skills snapshot | FK → workspaces; unique per workspace: `profile_id`, `desk` |
 | `jobs` | `id`, `workspace_id`, `client_request_id`, `status`, `hire_id` | FK `(workspace_id, hire_id)` → hires: a job can only be assigned to its own workspace's hire |
 | `job_events` | `job_id`, `at`, `actor`, `text` | via job (cascade delete) |

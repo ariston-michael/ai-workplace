@@ -1,7 +1,6 @@
-import { DEFAULT_WORKSPACE_ID } from "@/lib/workplace/db.server";
-import { handleGetState } from "@/lib/workplace/runtime.server";
+import { handleGetState, LEGACY } from "@/lib/workplace/runtime.server";
 
-/** Legacy alias for GET /api/workspaces/default. */
+/** Legacy alias for GET /api/workspaces/{your primary office}. Same sign-in and ownership checks. */
 export function GET() {
-  return handleGetState(DEFAULT_WORKSPACE_ID);
+  return handleGetState(LEGACY);
 }

@@ -1,7 +1,6 @@
-import { DEFAULT_WORKSPACE_ID } from "@/lib/workplace/db.server";
-import { handleSimulator } from "@/lib/workplace/runtime.server";
+import { handleSimulator, LEGACY } from "@/lib/workplace/runtime.server";
 
-/** Legacy alias for POST /api/workspaces/default/simulator. */
+/** Legacy alias for POST /api/workspaces/{your primary office}/simulator. Same sign-in and ownership checks. */
 export function POST(request: Request) {
-  return handleSimulator(request, DEFAULT_WORKSPACE_ID);
+  return handleSimulator(request, LEGACY);
 }

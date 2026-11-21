@@ -14,7 +14,8 @@ export type WorkspaceCard = {
   activeJobCount: number;
 };
 
-export default function WorkspaceDashboard({ workspaces, loading, error, onRefresh, onCreate }: {
+export default function WorkspaceDashboard({ workspaces, loading, error, onRefresh, onCreate, viewer }: {
+  viewer: string | null;
   workspaces: WorkspaceCard[];
   loading: boolean;
   error: string | null;
@@ -46,7 +47,7 @@ export default function WorkspaceDashboard({ workspaces, loading, error, onRefre
   }
 
   return <main className="workspaces-page">
-    <header className="workspaces-header"><Link href="/" className="workspaces-brand"><span aria-hidden="true">ai</span> AI Workplace</Link><span className="workspaces-localBadge">YOUR WORKSPACES</span></header>
+    <header className="workspaces-header"><Link href="/" className="workspaces-brand"><span aria-hidden="true">ai</span> AI Workplace</Link><span className="workspaces-localBadge">YOUR WORKSPACES</span>{viewer && <span className="workspaces-viewer">Signed in as <strong>{viewer}</strong> · <a href="/auth/logout">Log out</a></span>}</header>
     <div className="workspaces-content">
       <div className="workspaces-intro"><div><p className="workspaces-eyebrow">A HOME FOR YOUR TEAMS</p><h1>Workspaces</h1><p>A little space for each team. Step into an office, meet your workers, and pick up where the work left off.</p></div><button className="workspaces-primary" type="button" aria-expanded={creating} aria-controls="workspace-create" onClick={() => { setCreating(value => !value); setCreateError(null); }}>+ New workspace</button></div>
       {creating && <form id="workspace-create" className="workspaces-createForm" onSubmit={create}>

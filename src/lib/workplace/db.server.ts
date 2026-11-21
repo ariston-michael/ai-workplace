@@ -7,6 +7,8 @@
 //   2  workspaces table; every row belongs to a workspace via foreign keys.
 //      Composite keys stop a job, report or assignment pointing at another
 //      workspace's hire or job.
+//   3  workspaces.owner_sub: the Auth0 user (sub) who owns the office.
+//      NULL = unowned (data from before sign-in existed); hidden until claimed.
 
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
@@ -14,7 +16,7 @@ import path from "node:path";
 
 export type Db = DatabaseSync;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const DEFAULT_WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_NAME = "Default office";
 /** workspace_id used by schema v1 for all rows. */
@@ -148,16 +150,25 @@ function migrateV1toV2(db: Db, now: number) {
   if (hadSettings) db.exec("DROP TABLE simulator_settings_v1");
 }
 
-/** Bring any database up to SCHEMA_VERSION. Exported for tests. */
+/** v2 → v3: workspace ownership. Additive; existing offices stay unowned until claimed. */
+function migrateV2toV3(db: Db) {
+  db.exec(`
+    ALTER TABLE workspaces ADD COLUMN owner_sub TEXT CHECK (owner_sub IS NULL OR length(owner_sub) BETWEEN 1 AND 255);
+    CREATE INDEX workspaces_by_owner ON workspaces (owner_sub, created_at);
+  `);
+}
+
+/** Bring any database up to SCHEMA_VERSION, one version at a time. Exported for tests. */
 export function migrate(db: Db, file: string, now = Date.now()) {
-  const version = userVersion(db);
+  let version = userVersion(db);
   if (version > SCHEMA_VERSION) throw new Error(`Database schema v${version} is newer than this app (v${SCHEMA_VERSION}).`);
   if (version === SCHEMA_VERSION) return;
 
   const legacy = version === 0 && tableExists(db, "hires");
-  if (legacy && file !== ":memory:") {
-    // Keep a copy of the v1 file before touching it.
-    const backup = `${file}.v1-backup-${now}`;
+  const existing = legacy || version > 0;
+  if (existing && file !== ":memory:") {
+    // Keep a copy of the file before touching it.
+    const backup = `${file}.v${legacy ? 1 : version}-backup-${now}`;
     db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
   }
 
@@ -165,10 +176,14 @@ export function migrate(db: Db, file: string, now = Date.now()) {
   db.exec("PRAGMA foreign_keys = OFF");
   db.exec("BEGIN IMMEDIATE");
   try {
-    if (legacy) {
-      migrateV1toV2(db, now);
-    } else {
-      db.exec(TABLES_V2);
+    if (version === 0) {
+      if (legacy) migrateV1toV2(db, now);
+      else db.exec(TABLES_V2);
+      version = 2;
+    }
+    if (version === 2) {
+      migrateV2toV3(db);
+      version = 3;
     }
     db.prepare("INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(
       DEFAULT_WORKSPACE_ID,

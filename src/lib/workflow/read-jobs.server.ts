@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { defaultDbPath, DEFAULT_WORKSPACE_ID } from "../workplace/db.server.ts";
+import { defaultDbPath } from "../workplace/db.server.ts";
 import type { JobView, JobEventView, ReportView } from "../workplace/types.ts";
 
 type JobRow = Omit<JobView, "input" | "error" | "events" | "report"> & { input: string; error: string | null };
@@ -8,11 +8,17 @@ type EventRow = JobEventView & { jobId: string };
 type ReportRow = Omit<ReportView, "body"> & { jobId: string; body: string };
 
 /** Snapshot only: never seed, recover, schedule, or run jobs when viewing history. */
-export function readSavedJobs(file = defaultDbPath(), workspaceId = DEFAULT_WORKSPACE_ID): JobView[] {
-  if (!existsSync(file)) return [];
+export function readSavedJobs(file = defaultDbPath(), workspaceId: string | undefined, ownerSub: string): JobView[] | null {
+  if (!ownerSub || !existsSync(file)) return null;
   const db = new DatabaseSync(file, { readOnly: true });
   try {
     db.exec("PRAGMA busy_timeout = 5000; BEGIN;");
+    // Authorize inside the same read-only snapshot as the history query. Never
+    // claim, seed or recover a workspace merely because its history is opened.
+    const workspace = workspaceId
+      ? db.prepare("SELECT id FROM workspaces WHERE id = ? AND owner_sub = ?").get(workspaceId, ownerSub)
+      : db.prepare("SELECT id FROM workspaces WHERE owner_sub = ? ORDER BY CASE WHEN id = 'default' THEN 0 ELSE 1 END, created_at, id LIMIT 1").get(ownerSub);
+    if (!workspace) return null;
     const jobs = db.prepare(`
       SELECT j.id, j.type, j.title, j.input, j.required_skill AS requiredSkill,
         j.status, j.hire_id AS hireId, h.role AS hireRole,
@@ -20,7 +26,7 @@ export function readSavedJobs(file = defaultDbPath(), workspaceId = DEFAULT_WORK
         j.assigned_at AS assignedAt, j.started_at AS startedAt, j.finished_at AS finishedAt, j.error
       FROM jobs j LEFT JOIN hires h ON h.id = j.hire_id
       WHERE j.workspace_id = ? ORDER BY j.created_at DESC, j.rowid DESC LIMIT 50
-    `).all(workspaceId) as unknown as JobRow[];
+    `).all(workspace.id) as unknown as JobRow[];
     if (!jobs.length) return [];
     const ids = jobs.map(job => job.id);
     const placeholders = ids.map(() => "?").join(",");

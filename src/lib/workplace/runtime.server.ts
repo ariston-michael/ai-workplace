@@ -1,22 +1,31 @@
 // Wires the workplace service to the real clock, SQLite file and procurement
 // provider (fixture by default), and holds the request handlers shared by
 // /api/workspaces/[workspaceId]/* and the legacy /api/workplace/* aliases.
+//
+// Every handler requires an Auth0 session and only touches offices the
+// signed-in user owns. Other users' offices answer 404 so their ids are not confirmed.
 
 import { after, connection } from "next/server";
+import { auth0 } from "../auth0.ts";
 import { getDb } from "./db.server.ts";
 import {
   approveHire,
+  claimUnownedWorkspaces,
   createWorkspace,
   defaultIds,
+  ensurePersonalWorkspace,
+  getOwnedWorkspace,
   getState,
   getWorkspace,
   listWorkspaces,
+  primaryWorkspaceId,
   recoverJobs,
   resetWorkspace,
   runJob,
   setCameraFault,
   submitRequest,
   type ServiceDeps,
+  type Viewer,
 } from "./service.server.ts";
 import { lookupPart, procurementMode } from "../procurement-provider.server.ts";
 
@@ -66,27 +75,80 @@ function withState(ws: string, extra: Record<string, unknown> = {}) {
   return state ? Response.json({ ok: true, ...extra, state }) : notFound(ws);
 }
 
+// --- identity and ownership ---------------------------------------------------
+
+/** Workspace id from the URL, or LEGACY for /api/workplace/* (the user's primary office). */
+export const LEGACY = Symbol("legacy-primary-workspace");
+export type WorkspaceRef = string | typeof LEGACY;
+
+async function currentViewer(): Promise<Viewer | null> {
+  const session = await auth0.getSession();
+  const u = session?.user;
+  if (!u?.sub) return null;
+  return {
+    sub: u.sub,
+    name: typeof u.name === "string" ? u.name : null,
+    email: typeof u.email === "string" ? u.email : null,
+    emailVerified: u.email_verified === true,
+  };
+}
+
+/** 401 unless signed in. Also claims demo offices for their owner and creates a personal office on first use. */
+export async function requireViewer(): Promise<Viewer | Response> {
+  const viewer = await currentViewer();
+  if (!viewer) return errorJson(401, "UNAUTHENTICATED", "Sign in to use the workplace.");
+  const db = getDb();
+  claimUnownedWorkspaces(db, viewer, process.env.WORKPLACE_DEMO_OWNER_EMAIL);
+  ensurePersonalWorkspace(db, serviceDeps(), viewer);
+  return viewer;
+}
+
+/** The workspace id the signed-in user may act on, or a 401/404 response. */
+async function authorize(ref: WorkspaceRef): Promise<{ viewer: Viewer; ws: string } | Response> {
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+  const db = getDb();
+  if (ref === LEGACY) return { viewer, ws: primaryWorkspaceId(db, viewer.sub)! };
+  if (!getOwnedWorkspace(db, ref, viewer.sub)) return notFound(ref);
+  return { viewer, ws: ref };
+}
+
 // --- handlers -----------------------------------------------------------------
 
 export async function handleListWorkspaces() {
   await connection();
-  return Response.json({ ok: true, workspaces: listWorkspaces(getDb()) });
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+  const db = getDb();
+  return Response.json({
+    ok: true,
+    viewer: { name: viewer.name, email: viewer.email },
+    primaryWorkspaceId: primaryWorkspaceId(db, viewer.sub),
+    workspaces: listWorkspaces(db, viewer.sub),
+  });
 }
 
 export async function handleCreateWorkspace(request: Request) {
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
   const body = await readObject(request);
   if (!body) return badBody();
-  const r = createWorkspace(getDb(), serviceDeps(), { name: body.name });
+  const r = createWorkspace(getDb(), serviceDeps(), { name: body.name, ownerSub: viewer.sub });
   if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
   return Response.json({ ok: true, workspace: r.workspace }, { status: 201 });
 }
 
-export async function handleGetState(ws: string) {
+export async function handleGetState(ref: WorkspaceRef) {
   await connection(); // always read the database at request time
-  return withState(ws);
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  return withState(auth.ws);
 }
 
-export async function handleJobs(request: Request, ws: string) {
+export async function handleJobs(request: Request, ref: WorkspaceRef) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const { ws } = auth;
   const body = await readObject(request);
   if (!body) return badBody();
   const r = submitRequest(getDb(), serviceDeps(), ws, { clientRequestId: body.clientRequestId, request: body.request, pending: body.pending });
@@ -96,7 +158,10 @@ export async function handleJobs(request: Request, ws: string) {
   return withState(ws, { kind: "job", jobId: r.jobId, understood: r.understood });
 }
 
-export async function handleHires(request: Request, ws: string) {
+export async function handleHires(request: Request, ref: WorkspaceRef) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const { ws } = auth;
   const body = await readObject(request);
   if (!body) return badBody();
   const r = approveHire(getDb(), serviceDeps(), ws, { profileId: body.profileId, jobId: body.jobId });
@@ -105,7 +170,10 @@ export async function handleHires(request: Request, ws: string) {
   return withState(ws, { hireId: r.hireId, created: r.created });
 }
 
-export async function handleSimulator(request: Request, ws: string) {
+export async function handleSimulator(request: Request, ref: WorkspaceRef) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const { ws } = auth;
   const body = await readObject(request);
   if (!body) return badBody();
   const r = setCameraFault(getDb(), ws, body.cameraFault);
@@ -113,8 +181,10 @@ export async function handleSimulator(request: Request, ws: string) {
   return withState(ws);
 }
 
-export async function handleReset(ws: string) {
-  const r = resetWorkspace(getDb(), ws, Date.now());
+export async function handleReset(ref: WorkspaceRef) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const r = resetWorkspace(getDb(), auth.ws, Date.now());
   if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
-  return withState(ws);
+  return withState(auth.ws);
 }

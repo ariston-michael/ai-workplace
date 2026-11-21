@@ -288,3 +288,6 @@
   .office-newOffice { max-width: 100%; }
   .office-newOffice input { min-width: 0; max-width: 100%; }
 }
+.office-viewer { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-left: 8px; }
+.office-viewer strong { color: var(--ink); font-weight: 600; }
+.office-viewer a { text-decoration: none; color: var(--ink); }

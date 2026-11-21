@@ -1,7 +1,6 @@
-import { DEFAULT_WORKSPACE_ID } from "@/lib/workplace/db.server";
-import { handleJobs } from "@/lib/workplace/runtime.server";
+import { handleJobs, LEGACY } from "@/lib/workplace/runtime.server";
 
-/** Legacy alias for POST /api/workspaces/default/jobs. */
+/** Legacy alias for POST /api/workspaces/{your primary office}/jobs. Same sign-in and ownership checks. */
 export function POST(request: Request) {
-  return handleJobs(request, DEFAULT_WORKSPACE_ID);
+  return handleJobs(request, LEGACY);
 }
