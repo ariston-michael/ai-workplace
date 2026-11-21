@@ -1,17 +1,18 @@
 # Vultr public demo release
 
-Starting point: PR #2 is open at `2ceade4` (not merged into main as of preparation).
-This release branch adds standalone hosting and simulated SMS. It does not merge
-PR #2 or provision a paid instance. Confirm the live PR state before promotion.
+Confirmed release source: `origin/main` at
+`21c79aff187a60fc137c0b07006b0d4979cdfa51`. The user relayed Copilot's
+confirmation, and GitHub's main head was verified to match. PR #2 is merged.
 
-The deployment source must be the final `origin/main` commit explicitly confirmed
-by Copilot. That confirmation has not arrived. The earlier tested PR head and
-this preparation branch are not substitutes for the final main release. After
-confirmation, fetch main, verify the full confirmed SHA is its head, inspect how
-the hosting changes were integrated, and run the release checks against that
-exact source. If hosting changes are absent, integrate them through review and
-obtain confirmation of the resulting main SHA before building the release image.
-Record the confirmed source SHA and built image digest before provisioning.
+This preparation branch contains hosting and simulated-SMS additions absent from
+that confirmed main commit. It is not the selected release source. Reconcile the
+hosting configuration against the pinned main tree and test the resulting
+artifact before deployment. Any app-source additions that change the selected
+release require a new explicitly identified release SHA; do not silently replace
+the confirmed main build with the older preparation branch. The simulator in
+this branch must not be claimed as a feature of the pinned main source.
+Record the actual source SHA, any hosting-only build configuration, and the built
+image digest. No final-main deployment image has been verified yet.
 
 ## Host and account access required
 
@@ -192,3 +193,20 @@ Record results against the confirmed source SHA and public hostname:
 Public verification remains pending until provisioning is approved, the hostname
 is configured, and interactive Auth0 sign-in is available. Keep the separate Mac
 demo on port 3003 running throughout preparation and rollout.
+
+
+## Instance selection for user review
+
+- Cloud Compute → High Frequency → Toronto (`yto`).
+- Ubuntu 24.04 LTS x64; 1 vCPU / 2 GB / 64 GB / 2 TB transfer (`vhf-1c-2gb`).
+- Base US$12/month, US$0.016/hour; at the quoted hourly rate, 24 hours is
+  US$0.384 before the monthly cap, taxes, or extras. Account credit eligibility
+  and remaining balance must be checked in the Vultr account; they are unknown
+  here. Do not promise a zero out-of-pocket charge.
+- Leave automatic paid backups and other paid add-ons off for this proposal.
+- Add the existing Ed25519 public key from `~/.ssh/id_ed25519.pub`, fingerprint
+  `SHA256:Q+pMDWXHzJCG/v21Q+GvYogpE3iAARv/RUH3whfDwWc`. No private key
+  should be uploaded or shared.
+- Keep provisioning unauthorized until the user approves. A public IP is needed
+  after creation, along with a controlled DNS hostname for the prepared HTTPS
+  setup and access to update the Auth0 callback/logout URLs.

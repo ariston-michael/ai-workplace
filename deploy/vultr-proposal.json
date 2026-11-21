@@ -24,8 +24,11 @@
   "procurement_mode": "sample",
   "sms_mode": "simulated",
   "billing_note": "Base compute only; taxes, domain registration, optional add-ons and excess usage are excluded. Reconfirm account checkout price and capacity before requesting approval.",
-  "release_source": "Copilot-confirmed final origin/main commit; not selected yet",
-  "release_commit": null,
-  "release_confirmation_required": true,
-  "previous_tested_base_commit": "2ceade477b07abf6381fd565ddf701792380b619"
+  "release_source": "User relayed Copilot confirmation of final origin/main; GitHub head verified",
+  "release_commit": "21c79aff187a60fc137c0b07006b0d4979cdfa51",
+  "release_confirmation_required": false,
+  "previous_tested_base_commit": "2ceade477b07abf6381fd565ddf701792380b619",
+  "hosting_integration_status": "Pending reconciliation with pinned main source before deployment; preparation branch is not the release source",
+  "ssh_public_key_path": "/Users/aristonmichael/.ssh/id_ed25519.pub",
+  "ssh_public_key_fingerprint": "SHA256:Q+pMDWXHzJCG/v21Q+GvYogpE3iAARv/RUH3whfDwWc"
 }
