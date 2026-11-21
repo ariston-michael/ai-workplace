@@ -12,10 +12,20 @@ Hiring, simulator settings and resets use the selected workspace's API routes.
 Simulator settings and the reset action are collapsed under **Demo controls**.
 SAMPLE fixture and SIMULATED report labels remain visible.
 
-Worker markers move only when saved worker events report a departure or return.
-Queueing alone does not move them, historical events do not replay on page load,
-and reduced-motion preferences disable travel animations. A worker already
-working stays away if another job is queued for it.
+The map uses subtle pixel-art furniture and people; forms and labels remain normal
+sharp typography. Desks are about 15% narrower than the previous desktop map.
+New hires walk through the entrance to their workstation. Saved Dispatcher
+assignment/departure events send a worker back to its workstation, and a saved
+ready report sends it to reception. Click the paper-badged worker there to read
+the full saved report, with its fixture/simulation labels and workflow link.
+A camera report can be ready while its incident is still open.
+
+Furniture rendering and navigation share rectangles in `src/lib/workplace/office-map.ts`.
+Routes are rectilinear, include sprite clearance, and avoid desks, other chairs,
+plants, and the partition. A worker can sit in its own chair. Fast event sequences
+are queued visually; animation never delays actual execution or changes billing.
+Reloading places workers at their current station/reception without replaying old
+walks. Reduced motion skips travel while preserving the correct final position.
 
 Each job links to `/workflow?workspace=<id>&job=<id>`, selecting its saved history.
 Workflow reads remain read-only; they neither run nor recover jobs, and they
@@ -28,13 +38,13 @@ From this worktree, using Node 22.13+:
 
 ```bash
 npm ci
-WORKPLACE_DB_PATH=/Users/aristonmichael/HW13/ai-workplace/data/workplace.db npm run dev -- --port 3003
+WORKPLACE_DB_PATH=./data/workplace.db npm run dev -- --port 3007
 ```
 
-Open http://localhost:3003/. Set `WORKPLACE_DB_PATH` to your existing workplace
-SQLite file when running from another machine. Without that override the worktree
-uses `./data/workplace.db`. Claude's schema migration preserves earlier demo data
-in the `default` workspace and creates a backup before migration.
+Open http://localhost:3007/. This visual-refinement branch uses its own ignored
+SQLite file. Keep it separate from databases upgraded by newer auth/backend
+branches. The running production preview at http://localhost:3006/office?workspace=default
+also uses an isolated SAMPLE database; no credentials or live provider calls are needed.
 
 ## Verification
 
@@ -43,3 +53,8 @@ For a fresh checkout, run `npx next typegen` before type checking.
 Browser checks use an isolated temporary SQLite database and SAMPLE procurement;
 they create actual saved workspaces and jobs without contacting TinyFish or
 adding test records to the user's workspace database.
+
+The map tests cover entrance → workstation → reception routes at desktop and
+narrow mobile sizes, including blocked paths. Browser checks sample rendered
+sprite positions during hiring, assignment and return, then click the worker at
+reception to verify the saved report.

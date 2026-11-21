@@ -1,0 +1,57 @@
+/* Pixel detail belongs to the artwork; forms and labels retain the app typography. */
+.office-office .office-floor.office-pixelMap { height: 560px; position: relative; border: 8px solid #b8c5ac; border-bottom-color: #94a58a; border-radius: 3px; background-color: #e8e1cd; background-image: repeating-linear-gradient(0deg, transparent 0 31px, #c8bea02b 31px 32px), repeating-linear-gradient(90deg, transparent 0 31px, #c8bea020 31px 32px); box-shadow: inset 0 4px #81947720; }
+.office-mapAisle { position: absolute; pointer-events: none; background: #f4f0df55; border: 1px solid #f7f4e650; }
+.office-mapAisle-vertical { left: 44%; top: 12%; width: 12%; height: 85%; }
+.office-mapAisle-horizontal { left: 5%; top: 43%; width: 90%; height: 11%; }
+.office-mapRoomLabel, .office-mapReceptionLabel, .office-mapEntranceLabel { position: absolute; font-size: 9px; letter-spacing: 1.5px; color: #736e57; font-weight: 600; pointer-events: none; }
+.office-mapRoomLabel { left: 7%; top: 6%; }
+.office-mapReceptionLabel { left: 10%; top: 64%; }
+.office-mapEntranceLabel { left: 27.5%; bottom: 2.8%; transform: translateX(-50%); font-size: 8px; }
+.office-mapDecor { position: absolute; box-sizing: border-box; }
+.office-mapDecor-window { background: repeating-linear-gradient(90deg, #bfd5cd 0 32%, #8da499 32% 34%); border: 3px solid #8da499; box-shadow: 3px 4px #7b948116; }
+.office-mapDecor-partition { background: #bcc7af; border-bottom: 3px solid #94a58a; box-shadow: 0 2px #53684b12; }
+.office-mapDecor-plant-north, .office-mapDecor-plant-south { display: grid; place-items: center; }
+.office-mapDecor-plant-north i, .office-mapDecor-plant-south i { display: block; width: min(90%, 28px); height: auto; aspect-ratio: 1; background: #64845b; border: 3px solid #486b43; clip-path: polygon(25% 0, 75% 0, 75% 20%, 100% 20%, 100% 75%, 80% 75%, 80% 100%, 20% 100%, 20% 80%, 0 80%, 0 25%, 25% 25%); box-shadow: inset 4px 0 #76976a, inset 0 -5px #3d5d37; }
+.office-mapStation { position: absolute; display: block; background: transparent; border: 0; padding: 0; color: var(--ink); cursor: pointer; z-index: 1; overflow: visible; }
+.office-mapStation:focus-visible { outline: 3px solid #a34f2e; outline-offset: 7px; }
+.office-mapStation[aria-pressed="true"] .office-mapDesk, .office-mapStation:hover .office-mapDesk { outline: 2px solid #6e835b; outline-offset: 5px; }
+.office-mapDesk { display: block; position: absolute; inset: 0; box-sizing: border-box; background: #c99c70; border: 3px solid #ad7b50; border-radius: 2px; box-shadow: 0 3px #8d6645, inset 0 2px #e0b98f; }
+.office-mapDesk::after { content: ""; position: absolute; left: 5%; right: 5%; top: 72%; height: 1px; background: #a7764c44; }
+.office-mapChair { position: absolute; box-sizing: border-box; border: 3px solid #64785f; border-radius: 3px; background: #899c7d; box-shadow: 0 2px #50664b, inset 0 3px #a1b093; }
+.office-mapMonitor { position: absolute; left: 31%; top: 13%; width: 38%; height: 46%; background: #354b43; border: 3px solid #526b5d; border-radius: 1px; box-shadow: 0 2px #956c48; }
+.office-mapMonitor::after { content: ""; position: absolute; top: 22%; left: 15%; width: 65%; height: 2px; background: #9ab28a; box-shadow: 0 5px #789c85; }
+.office-mapKeyboard { position: absolute; left: 35%; bottom: 12%; width: 30%; height: 13%; background: #e9e2cb; border-bottom: 2px solid #c9c2a9; }
+.office-mapNotebook { position: absolute; left: 10%; top: 23%; width: 15%; height: 51%; background: #ece5ce; border-left: 3px solid #af6d4f; }
+.office-mapCup { position: absolute; right: 9%; top: 30%; width: 9px; height: 9px; background: #735c46; border: 2px solid #e9dfc6; box-shadow: 2px 0 #e9dfc6; }
+.office-mapVacant .office-mapDesk { background: #d7c5a1; border-color: #b6a07d; box-shadow: 0 3px #ab9675, inset 0 2px #e8dbbc; }
+.office-mapVacant .office-mapMonitor { background: #9da68e; border-color: #aeb69d; }
+.office-mapVacant .office-mapMonitor::after { display: none; }
+.office-mapAdd { position: absolute; width: 27px; height: 27px; left: 50%; top: -53%; transform: translate(-50%, -50%); display: grid; place-items: center; border: 1px dashed #889a70; border-radius: 3px; background: #f4f3e5; font-size: 22px; line-height: 1; color: #5d754b; }
+.office-mapStationLabel { position: absolute; top: calc(100% + 11px); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% + 28px); display: flex; flex-direction: column; gap: 3px; padding: 5px 8px; border: 1px solid #e0dfcc; border-radius: 4px; background: #faf9eef5; line-height: 1.4; pointer-events: none; }
+.office-mapStationLabel strong { font-size: 11px; font-weight: 650; }
+.office-mapStationLabel small { font-size: 9px; color: #65715c; }
+.office-mapDoor { position: absolute; left: 18.5%; bottom: 0; width: 18%; height: 10px; background: #f8f6e9; border-left: 3px solid #91a286; border-right: 3px solid #91a286; box-shadow: inset 0 3px #d7ddcb; }
+.office-mapDispatcher { position: absolute; left: 50%; top: -53.33%; transform: translate(-50%, -50%); }
+.office-mapSprite { position: relative; width: 26px; height: 30px; display: block; --map-shirt: #8fa27b; }
+.office-mapSprite i { position: absolute; display: block; box-sizing: border-box; }
+.office-mapHair { left: 5px; top: 0; width: 16px; height: 10px; background: #515849; border-top: 2px solid #414b3c; box-shadow: -2px 3px #515849, 2px 3px #515849; }
+.office-mapFace { left: 5px; top: 8px; width: 16px; height: 10px; background: #dfbc95; border-bottom: 2px solid #c49e79; }
+.office-mapShirt { left: 2px; top: 16px; width: 22px; height: 11px; background: var(--map-shirt); border: 2px solid #51614d; box-shadow: 2px 2px #394d351c; }
+.office-mapFeet { left: 6px; bottom: 0; width: 6px; height: 4px; background: #4a5844; box-shadow: 8px 0 #4a5844; }
+.office-mapSprite-coral { --map-shirt: #c88c69; }
+.office-mapSprite-blue { --map-shirt: #82a7b4; }
+.office-mapSprite-gold { --map-shirt: #d1b76d; }
+.office-mapSprite-sage { --map-shirt: #98ac82; }
+.office-mapWalker { position: absolute; z-index: 4; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; transform: translate(-50%, -50%); cursor: pointer; opacity: 0; }
+.office-mapWalker[data-positioned="true"] { opacity: 1; }
+.office-mapWalker:focus-visible, .office-mapWalker[aria-pressed="true"] { outline: 2px solid #7d925f; outline-offset: 2px; border-radius: 3px; }
+.office-mapWalker[data-travel="walking"] .office-mapFeet { animation: officePixelSteps .24s steps(2, end) infinite; }
+.office-mapReportBadge { position: absolute; right: -1px; top: -2px; width: 17px; height: 17px; display: grid; place-items: center; border: 1px solid #9d813f; background: #f2df9e; color: #635128; font-size: 13px; line-height: 1; border-radius: 2px; box-shadow: 1px 2px #66512615; }
+.office-mapWorkerLabel { position: absolute; bottom: calc(100% + 5px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 140px; border: 1px solid #d8decb; background: #fffef5; border-radius: 4px; padding: 5px 7px; font-size: 10px; font-weight: 500; pointer-events: none; opacity: 0; }
+.office-mapWalker:hover .office-mapWorkerLabel, .office-mapWalker:focus-visible .office-mapWorkerLabel { opacity: 1; }
+@keyframes officePixelSteps { 0% { transform: translateY(0); box-shadow: 8px -1px #4a5844; } 100% { transform: translateY(-1px); box-shadow: 8px 1px #4a5844; } }
+@media (max-width: 780px) { .office-office .office-floor.office-pixelMap { height: 540px; } }
+@media (max-width: 460px) { .office-mapStationLabel { padding: 4px 5px; gap: 2px; } .office-mapStationLabel strong { font-size: 10px; } .office-mapStationLabel small { font-size: 8px; } .office-mapRoomLabel, .office-mapReceptionLabel { font-size: 8px; letter-spacing: 1px; } }
+@media (prefers-reduced-motion: reduce) { .office-mapWalker[data-travel="walking"] .office-mapFeet { animation: none; } }
+
+#floor-title:focus { outline: none; }

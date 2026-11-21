@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { workerMovement } from "@/lib/workplace/movement";
+import OfficeMap from "./office-map";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import "./office.css";
 import { CameraIncidentReport } from "./repair-incident";
@@ -21,7 +21,7 @@ import type { HireView, JobStatus, JobView, ReportMode, WorkplaceState, Workspac
 const DEFAULT_WORKSPACE = "default";
 const apiBase = (ws: string) => `/api/workspaces/${encodeURIComponent(ws)}`;
 
-type Selection = null | "dispatcher" | { hireId: string } | { desk: string };
+type Selection = null | "dispatcher" | { hireId: string; jobId?: string } | { desk: string };
 
 const DESKS = [
   { desk: "workstation-01", label: "Workstation 01", className: "office-inspection" },
@@ -53,23 +53,6 @@ function ModeBadge({ mode }: { mode: ReportMode }) {
   return <span className={`office-modeBadge office-mode-${mode}`}>{text}</span>;
 }
 
-function Station({ worker, station, label, selected, onClick, status, away, hideWorker }: {
-  worker?: AvatarLike & { role: string }; station: string; label: string; selected: boolean; onClick: () => void; status?: string; away?: boolean; hideWorker?: boolean;
-}) {
-  return (
-    <button type="button" className={`office-station ${station} ${selected ? "office-selected" : ""} ${!worker ? "office-vacant" : ""}`}
-      onClick={onClick} aria-label={worker ? `${label}: ${worker.role}${status ? `, ${status}` : ""}. View role and status` : `${label}, empty desk: open marketplace`}
-      aria-pressed={selected} aria-controls="office-panel">
-      <span className="office-stationArt" aria-hidden="true">
-        <span className="office-chair" />
-        {worker && !hideWorker && <Avatar key={worker.initials} worker={worker} small away={away} />}
-        <span className="office-desk"><span className="office-monitor" /><span className="office-keyboard" /><span className="office-notebook" /><span className="office-cup" /></span>
-        {!worker && <span className="office-add">+</span>}
-      </span>
-      <span className="office-stationLabel"><span>{worker?.role ?? "Your next teammate"}</span><small>{worker ? `${label}${status ? ` · ${status}` : ""}` : `${label} · hire a worker`}</small></span>
-    </button>
-  );
-}
 
 async function api(path: string, body?: unknown): Promise<{ ok: true; state: WorkplaceState } | { ok: false; error: { code: string; message: string } }> {
   try {
@@ -145,7 +128,10 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [arrivals, setArrivals] = useState<Set<string>>(() => new Set());
   const panelHeading = useRef<HTMLHeadingElement>(null);
+  const floorHeading = useRef<HTMLHeadingElement>(null);
+  const focusMapOnHire = useRef(false);
 
   const refresh = useCallback(async () => {
     const r = await api(base);
@@ -170,6 +156,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
   }, [busy, refresh]);
 
   useEffect(() => {
+    if (focusMapOnHire.current) { focusMapOnHire.current = false; return; }
     if (selection) panelHeading.current?.focus();
   }, [selection]);
 
@@ -189,6 +176,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
     if (!r.ok || r.kind !== "job") return;
     setState(r.state);
     const job = r.state.jobs.find(j => j.id === r.jobId);
+    if (job && (job.status === "queued" || job.status === "working")) requestAnimationFrame(() => floorHeading.current?.focus());
     setAnnouncement(job?.status === "needs_worker" ? "Dispatcher: nobody on the team has this skill. Review the recommended hire." : `Dispatcher assigned the job to ${job?.hireRole}.`);
   }
 
@@ -201,17 +189,19 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
   async function hire(profileId: string, jobId?: string) {
     const r = await api(`${base}/hires`, { profileId, jobId });
     if (!r.ok) { setAnnouncement(r.error.message); return; }
-    setState(r.state);
     const h = r.state.team.find(t => t.profileId === profileId);
-    setAnnouncement(`${h?.role} hired and seated at ${DESKS.find(d => d.desk === h?.desk)?.label}.${jobId ? " The original job resumed automatically." : ""}`);
-    if (!jobId && h) setSelection({ hireId: h.id });
+    if (h && !state?.team.some(previous => previous.id === h.id)) setArrivals(previous => new Set(previous).add(h.id));
+    setState(r.state);
+    setAnnouncement(`${h?.role} hired and walking in to ${DESKS.find(d => d.desk === h?.desk)?.label}.${jobId ? " The original job resumed automatically." : ""}`);
+    if (!jobId && h) { focusMapOnHire.current = true; setSelection({ hireId: h.id }); }
+    requestAnimationFrame(() => floorHeading.current?.focus());
   }
 
   async function resetDemo() {
     const officeName = state?.workspace.name ?? workspaceId;
     if (!window.confirm(`Reset “${officeName}”? This deletes this office’s hires, jobs, reports and simulator settings. Other offices are not affected.`)) return;
     const r = await api(`${base}/reset`, {});
-    if (r.ok) { setState(r.state); setSelection(null); setAnnouncement(`${officeName} reset. Only the Quality Inspector remains on the team.`); }
+    if (r.ok) { setArrivals(new Set()); setState(r.state); setSelection(null); setAnnouncement(`${officeName} reset. Only the Quality Inspector remains on the team.`); }
     else setAnnouncement(r.error.message);
   }
 
@@ -222,8 +212,8 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
 
   const team = state?.team ?? [];
   const hireAt = (desk: string) => team.find(h => h.desk === desk);
-  const jobOf = (h: HireView) => state?.jobs.find(j => j.id === h.activeJobId);
   const selectedHire = selection && typeof selection === "object" && "hireId" in selection ? team.find(h => h.id === selection.hireId) : undefined;
+  const selectedReportId = selection && typeof selection === "object" && "hireId" in selection ? selection.jobId : undefined;
   const selectedDesk = selection && typeof selection === "object" && "desk" in selection ? selection.desk : undefined;
   const openDesks = DESKS.filter(d => !hireAt(d.desk)).length;
 
@@ -250,30 +240,11 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
 
         <div className="office-layout">
           <section className="office-officeCard" aria-labelledby="floor-title">
-            <div className="office-floorHeader"><div><span className="office-liveDot" /><h2 id="floor-title">Your office</h2></div><span>{team.length} {team.length === 1 ? "worker" : "workers"} + Dispatcher <span className="office-separator">/</span> {openDesks} open {openDesks === 1 ? "desk" : "desks"}</span></div>
-            <div className="office-floor">
-              <div className="office-window" aria-hidden="true"><i /><i /><i /></div>
-              <div className="office-plant office-plantOne" aria-hidden="true">✦</div>
-              <div className="office-plant office-plantTwo" aria-hidden="true">✦</div>
-              <span className="office-roomLabel">THE WORKROOM</span>
-              <div className="office-rug" aria-hidden="true" />
-              {DESKS.map(d => {
-                const h = hireAt(d.desk);
-                const active = h ? jobOf(h) : undefined;
-                const status = active ? (active.status === "working" ? "Out on a job" : "Job assigned") : h ? "Ready" : undefined;
-                return <Station key={d.desk} worker={h} station={d.className} label={d.label} status={status} hideWorker
-                  selected={h ? selectedHire?.id === h.id : selectedDesk === d.desk}
-                  onClick={() => select(h ? { hireId: h.id } : { desk: d.desk })} />;
-              })}
-              {team.map(hire => <WorkerMarker key={hire.id} hire={hire} jobs={state?.jobs ?? []} onSelect={() => select({ hireId: hire.id })} />)}
-              <div className="office-divider" aria-hidden="true" />
-              <span className="office-receptionLabel">RECEPTION</span>
-              <Station worker={DISPATCHER} station="office-reception" label="Reception" status={state?.jobs.some(j => j.status === "needs_worker") ? "Waiting for your hire approval" : undefined}
-                selected={selection === "dispatcher" || selection === null} onClick={() => select("dispatcher")} />
-              <span className="office-door" aria-hidden="true" />
-              <span className="office-entry" aria-hidden="true">ENTRANCE ↑</span>
-            </div>
-            <div className="office-floorFooter"><span aria-hidden="true">↖</span> Select a desk to meet a worker or an empty desk to open the marketplace.</div>
+            <div className="office-floorHeader"><div><span className="office-liveDot" /><h2 id="floor-title" ref={floorHeading} tabIndex={-1}>Your office</h2></div><span>{team.length} {team.length === 1 ? "worker" : "workers"} + Dispatcher <span className="office-separator">/</span> {openDesks} open {openDesks === 1 ? "desk" : "desks"}</span></div>
+            <OfficeMap team={team} jobs={state?.jobs ?? []} loaded={state !== null} arrivals={arrivals}
+              selectedHire={selectedHire?.id} selectedDesk={selectedDesk} dispatcherSelected={selection === null || selection === "dispatcher"}
+              onWorker={(hireId, jobId) => select({ hireId, jobId })} onDesk={desk => select({ desk })} onDispatcher={() => select("dispatcher")} />
+            <div className="office-floorFooter"><span aria-hidden="true">↖</span> Empty desk: hire a worker. Paper badge: a report is ready for pickup at reception.</div>
           </section>
 
           <aside id="office-panel" className="office-panel" aria-labelledby="panel-title">
@@ -287,7 +258,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
                 </div>
               </>
             ) : selectedHire && state ? (
-              <WorkerPanel hire={selectedHire} state={state} headingRef={panelHeading} />
+              <WorkerPanel hire={selectedHire} state={state} reportJobId={selectedReportId} headingRef={panelHeading} />
             ) : (selection === "dispatcher" || selection === null) ? (
               <>
                 <div className="office-panelHeader"><p className="office-eyebrow">WORKER DETAILS</p><h2 id="panel-title" ref={panelHeading} tabIndex={-1}>Dispatcher</h2></div>
@@ -337,32 +308,6 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
       </div>
     </main>
   );
-}
-
-function WorkerMarker({ hire, jobs, onSelect }: { hire: HireView; jobs: JobView[]; onSelect: () => void }) {
-  const movement = workerMovement(hire, jobs);
-  const observed = useRef<{ initialized: boolean; key: string | null }>({ initialized: false, key: null });
-  const [returnEvent, setReturnEvent] = useState<string | null>(null);
-  useEffect(() => {
-    const isNew = observed.current.initialized && observed.current.key !== movement.eventKey;
-    observed.current = { initialized: true, key: movement.eventKey };
-    if (!isNew || (movement.kind !== "returned" && movement.kind !== "failed")) return;
-    const frame = requestAnimationFrame(() => setReturnEvent(movement.eventKey));
-    return () => cancelAnimationFrame(frame);
-  }, [movement.eventKey, movement.kind]);
-  const style = {
-    "--desk-x": hire.desk === "workstation-01" ? "27%" : "73%",
-    "--desk-y": hire.desk === "desk-03" ? "calc(100% - 150px)" : "var(--office-chair-y, 120px)",
-    "--task-x": hire.desk === "workstation-01" ? "40%" : "64%",
-    "--task-y": "54%",
-  } as CSSProperties;
-  const returning = returnEvent !== null && returnEvent === movement.eventKey && movement.kind !== "working";
-  return <button type="button" style={style} onClick={onSelect}
-    className={`office-workerMarker ${movement.kind === "working" ? "office-markerWorking" : ""} ${returning ? "office-markerReturned" : ""}`}
-    data-movement={movement.kind} aria-label={`${hire.role}: ${movement.kind === "working" ? "working on a job" : "at their desk"}. View worker`}>
-    <Avatar worker={hire} small />
-    {movement.kind === "working" && <span className="office-markerCaption">Working</span>}
-  </button>;
 }
 
 type RequestReply =
@@ -561,15 +506,15 @@ function SupplierReport({ result }: { result: LookupResult }) {
   );
 }
 
-function WorkerPanel({ hire, state, headingRef }: { hire: HireView; state: WorkplaceState; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+function WorkerPanel({ hire, state, headingRef, reportJobId }: { hire: HireView; state: WorkplaceState; reportJobId?: string; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
   const jobs = state.jobs.filter(j => j.hireId === hire.id);
   const active = jobs.find(j => j.id === hire.activeJobId);
-  const latest = jobs.find(j => j.report);
+  const latest = reportJobId ? jobs.find(j => j.id === reportJobId) : jobs.find(j => j.report);
   return (
     <>
       <div className="office-panelHeader"><p className="office-eyebrow">WORKER DETAILS</p><h2 id="panel-title" ref={headingRef} tabIndex={-1}>{hire.role}</h2></div>
       <div className="office-panelBody">
-        <div className="office-profile"><Avatar worker={hire} /><span className="office-status"><span /> {active ? (active.status === "working" ? "Out on a job" : "Job assigned") : "Ready"}</span></div>
+        <div className="office-profile"><Avatar worker={hire} /><span className="office-status"><span /> {active ? (active.status === "working" ? "Working" : "Job assigned") : latest?.report ? "Report ready" : "Ready"}</span></div>
         <p className="office-description">{hire.specialty}</p>
         <h3 className="office-sectionLabel">SKILLS</h3><ul className="office-skills">{hire.skills.map(s => <li key={s}>{SKILLS[s]}</li>)}</ul>
         <dl className="office-details">
@@ -580,7 +525,12 @@ function WorkerPanel({ hire, state, headingRef }: { hire: HireView; state: Workp
           <div><dt>Current job</dt><dd>{active?.title ?? "None"}</dd></div>
         </dl>
         {latest && <p className="office-workflowLink"><Link href={`/workflow?workspace=${encodeURIComponent(state.workspaceId)}&job=${encodeURIComponent(latest.id)}`}>View latest job’s workflow ↗</Link></p>}
-        {latest?.report && <div className="office-note"><span aria-hidden="true">↳</span><p>Latest report ({latest.report.mode.toUpperCase()}): {latest.report.summary}</p></div>}
+        {latest?.error && <p className="office-errorText">{latest.error.code}: {latest.error.message}</p>}
+        {latest?.report && <section className="office-workerReport" aria-label="Saved worker report">
+          <h3>{latest.report.body.type === "camera_incident" && latest.report.body.incident.status === "open" ? "Report ready · incident still open" : "Report ready"}</h3>
+          <ModeBadge mode={latest.report.mode} /><p className="office-jobMeta">{latest.report.summary}</p>
+          {latest.report.body.type === "supplier_lookup" ? <SupplierReport result={latest.report.body.result} /> : <CameraIncidentReport incident={latest.report.body.incident} />}
+        </section>}
       </div>
     </>
   );

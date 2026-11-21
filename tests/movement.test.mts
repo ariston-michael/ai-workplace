@@ -8,7 +8,7 @@ import type { LookupResponse } from "../src/lib/procurement.ts";
 
 process.env.PROCUREMENT_FIXTURE_DELAY_MS = "0";
 
-test("worker movement follows saved departure and return events; queueing alone never moves a worker", async () => {
+test("worker movement follows saved departure and return events; saved assignment sends a worker to its workstation", async () => {
   const db = openDb(":memory:");
   let id = 0, clock = 1000;
   let finish!: (result: LookupResponse) => void;
@@ -23,7 +23,7 @@ test("worker movement follows saved departure and return events; queueing alone 
     assert.ok(hired.ok);
     let state = getState(db, DEFAULT_WORKSPACE_ID, "sample", clock)!;
     let hire = state.team.find(item => item.id === hired.hireId)!;
-    assert.equal(workerMovement(hire, state.jobs).kind, "at_desk");
+    assert.equal(workerMovement(hire, state.jobs).kind, "assigned");
     const running = runJob(db, deps, submitted.jobId);
     state = getState(db, DEFAULT_WORKSPACE_ID, "sample", clock)!;
     hire = state.team.find(item => item.id === hired.hireId)!;
