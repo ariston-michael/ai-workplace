@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import BrandMark from "../brand-mark";
 import InventoryReport from "../office/inventory-report";
 import { ACTION_LABEL } from "@/lib/camera-incident";
 import { SKILLS } from "@/lib/workplace/catalog";
@@ -145,7 +146,7 @@ function WorkflowContent({ workspaceId, requestedJobId }: { workspaceId: string;
   }
 
   return <main className="workflow-page">
-    <header className="workflow-header"><Link href={officeHref} className="workflow-brand"><span aria-hidden="true">ai</span> AI Workplace</Link><span className="workflow-readonly">READ-ONLY · SAVED HISTORY</span></header>
+    <header className="workflow-header"><Link href={officeHref} className="workflow-brand"><BrandMark /> AI Workplace</Link><span className="workflow-readonly">READ-ONLY · SAVED HISTORY</span></header>
     <div className="workflow-workspace">
       <div className="workflow-intro"><div><p className="workflow-eyebrow">WORKSPACE / WORKFLOW</p><h1>Follow the work.</h1><p>From the user’s request to the worker’s findings. Every detail comes from saved jobs and history.</p></div><button type="button" className="workflow-refresh" disabled={loading} onClick={() => { setLoading(true); setRefreshKey(value => value + 1); }}>{loading ? "Loading…" : "Refresh saved jobs"}</button></div>
       <div className="workflow-loadStatus" role="status">{loading ? "Loading saved jobs…" : jobs ? `${jobs.length} saved ${jobs.length === 1 ? "job" : "jobs"} loaded.` : ""}</div>
