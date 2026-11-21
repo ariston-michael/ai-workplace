@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS job_events (
 );
 CREATE INDEX IF NOT EXISTS job_events_by_job ON job_events (job_id, id);
 
+-- Simulator-side settings. Workers never read these directly; the simulated
+-- station turns them into observations.
+CREATE TABLE IF NOT EXISTS simulator_settings (
+  workspace_id TEXT PRIMARY KEY,
+  camera_fault TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reports (
   id                TEXT PRIMARY KEY,
   job_id            TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,

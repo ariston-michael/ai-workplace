@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { publicSuppliers } from "@/lib/procurement";
 import Office from "./office";
 
 export const metadata: Metadata = {
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function OfficePage() {
-  return <Office suppliers={publicSuppliers()} />;
+  return <Office />;
 }
