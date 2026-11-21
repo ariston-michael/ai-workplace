@@ -1,7 +1,6 @@
-import { DEFAULT_WORKSPACE_ID } from "@/lib/workplace/db.server";
-import { handleReset } from "@/lib/workplace/runtime.server";
+import { handleReset, LEGACY } from "@/lib/workplace/runtime.server";
 
-/** Legacy alias for POST /api/workspaces/default/reset. */
+/** Legacy alias for POST /api/workspaces/{your primary office}/reset. Same sign-in and ownership checks. */
 export function POST() {
-  return handleReset(DEFAULT_WORKSPACE_ID);
+  return handleReset(LEGACY);
 }

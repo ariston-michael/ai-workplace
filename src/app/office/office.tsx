@@ -16,7 +16,6 @@ import {
 } from "@/lib/workplace/catalog";
 import type { HireView, JobStatus, JobView, ReportMode, WorkplaceState, WorkspaceSummary } from "@/lib/workplace/types";
 
-const DEFAULT_WORKSPACE = "default";
 const apiBase = (ws: string) => `/api/workspaces/${encodeURIComponent(ws)}`;
 
 type Selection = null | "dispatcher" | { hireId: string } | { desk: string };
@@ -83,21 +82,39 @@ async function api(path: string, body?: unknown): Promise<{ ok: true; state: Wor
 /** Reads ?workspace= and renders that office. Keyed so switching offices starts from clean state. */
 export default function Office() {
   const params = useSearchParams();
-  const ws = params.get("workspace") || DEFAULT_WORKSPACE;
-  return <OfficeView key={ws} workspaceId={ws} />;
+  const ws = params.get("workspace");
+  return ws ? <OfficeView key={ws} workspaceId={ws} /> : <OpenPrimaryOffice />;
+}
+
+/** /office with no ?workspace= opens the signed-in user's primary office. */
+function OpenPrimaryOffice() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/workspaces", { cache: "no-store" }).then(r => r.json()).then(r => {
+      if (cancelled) return;
+      if (r.ok && r.primaryWorkspaceId) router.replace(`${pathname}?workspace=${encodeURIComponent(r.primaryWorkspaceId)}`);
+      else setError(r.error?.message ?? "Could not open your office.");
+    }).catch(() => { if (!cancelled) setError("Could not reach the local task service."); });
+    return () => { cancelled = true; };
+  }, [router, pathname]);
+  return <main className="office-loading">{error ? <span role="alert">{error} <a href="/auth/login?returnTo=/office">Sign in</a></span> : "Opening your office…"}</main>;
 }
 
 function OfficeSwitcher({ current, currentName }: { current: string; currentName?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [offices, setOffices] = useState<WorkspaceSummary[]>([]);
+  const [viewer, setViewer] = useState<{ name: string | null; email: string | null } | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/workspaces", { cache: "no-store" }).then(r => r.json()).then(r => { if (!cancelled && r.ok) setOffices(r.workspaces); }).catch(() => {});
+    fetch("/api/workspaces", { cache: "no-store" }).then(r => r.json()).then(r => { if (!cancelled && r.ok) { setOffices(r.workspaces); setViewer(r.viewer); } }).catch(() => {});
     return () => { cancelled = true; };
   }, [current]);
 
@@ -132,6 +149,13 @@ function OfficeSwitcher({ current, currentName }: { current: string; currentName
         </form>
       ) : (
         <button type="button" className="office-reset" onClick={() => setCreating(true)}>New office <span aria-hidden="true">+</span></button>
+      )}
+      {viewer && (
+        <span className="office-viewer">
+          Signed in as <strong>{viewer.name ?? viewer.email ?? "you"}</strong>
+          {/* Plain <a>: /auth/* routes are handled by the Auth0 proxy, not client navigation. */}
+          <a className="office-reset" href="/auth/logout">Log out</a>
+        </span>
       )}
     </div>
   );
@@ -238,6 +262,14 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
         </div>
       </header>
 
+      {!state && loadError ? (
+        // Not found, not yours, or signed out: show nothing of the office itself.
+        <div className="office-workspace">
+          <p className="office-eyebrow">OFFICE UNAVAILABLE</p>
+          <p className="office-errorText" role="alert">{loadError}</p>
+          <p className="office-jobMeta"><a href="/office">Go to your office</a></p>
+        </div>
+      ) : (
       <div className="office-workspace">
         <div className="office-pageHeading">
           <div><p className="office-eyebrow">WORKSPACE / {(state?.workspace.name ?? workspaceId).toUpperCase()}</p><h1>A little space. A capable team.</h1><p>Give the Dispatcher a job. It checks your team’s skills, assigns a qualified worker, or recommends a hire.</p></div>
@@ -331,6 +363,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
         <p className="office-announcement" role="status">{announcement}</p>
         <footer className="office-pageFooter"><span>Built around the work. And the people directing it.</span><span>Team, jobs and reports are saved locally in SQLite.</span></footer>
       </div>
+      )}
     </main>
   );
 }

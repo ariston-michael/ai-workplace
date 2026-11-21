@@ -62,25 +62,91 @@ interface WorkspaceRow {
   id: string;
   name: string;
   created_at: number;
+  owner_sub: string | null;
+}
+
+/** The signed-in user, from the Auth0 session. */
+export interface Viewer {
+  sub: string;
+  name?: string | null;
+  email?: string | null;
+  emailVerified?: boolean;
 }
 
 export function getWorkspace(db: Db, id: unknown): WorkspaceRow | undefined {
   if (typeof id !== "string" || !/^[a-z0-9-]{1,64}$/.test(id)) return undefined;
-  return db.prepare("SELECT id, name, created_at FROM workspaces WHERE id = ?").get(id) as unknown as WorkspaceRow | undefined;
+  return db.prepare("SELECT id, name, created_at, owner_sub FROM workspaces WHERE id = ?").get(id) as unknown as WorkspaceRow | undefined;
+}
+
+/** The workspace only if `sub` owns it. Anyone else gets undefined (callers answer 404, not 403). */
+export function getOwnedWorkspace(db: Db, id: unknown, sub: string): WorkspaceRow | undefined {
+  const ws = getWorkspace(db, id);
+  return ws && ws.owner_sub !== null && ws.owner_sub === sub ? ws : undefined;
+}
+
+/**
+ * Offices created before sign-in existed have no owner. They are handed to the
+ * user whose *verified* email matches WORKPLACE_DEMO_OWNER_EMAIL, and stay
+ * hidden from everyone otherwise. Returns how many offices were claimed.
+ */
+export function claimUnownedWorkspaces(db: Db, viewer: Viewer, demoOwnerEmail: string | undefined): number {
+  const wanted = demoOwnerEmail?.trim().toLowerCase();
+  if (!wanted || !viewer.emailVerified || viewer.email?.trim().toLowerCase() !== wanted) return 0;
+  return Number(db.prepare("UPDATE workspaces SET owner_sub = ? WHERE owner_sub IS NULL").run(viewer.sub).changes);
+}
+
+/** The user's main office: the migrated default office if they own it, else their oldest office. */
+export function primaryWorkspaceId(db: Db, sub: string): string | undefined {
+  const row = db
+    .prepare(
+      `SELECT id FROM workspaces WHERE owner_sub = ?
+       ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, created_at, id LIMIT 1`,
+    )
+    .get(sub, DEFAULT_WORKSPACE_ID) as { id: string } | undefined;
+  return row?.id;
+}
+
+function personalOfficeName(viewer: Viewer): string {
+  const base = (viewer.name?.trim() || viewer.email?.split("@")[0]?.trim() || "").split(/\s+/)[0];
+  return base ? `${base.slice(0, 40)}’s office` : "My office";
+}
+
+/** Make sure the user owns at least one office (created on first sign-in). Returns their primary office id. */
+export function ensurePersonalWorkspace(db: Db, deps: ServiceDeps, viewer: Viewer): string {
+  return transaction(db, () => {
+    const existing = primaryWorkspaceId(db, viewer.sub);
+    if (existing) return existing;
+    return insertWorkspace(db, deps, personalOfficeName(viewer), viewer.sub);
+  });
+}
+
+function insertWorkspace(db: Db, deps: ServiceDeps, name: string, ownerSub: string | null): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "office";
+  let id = base;
+  for (let i = 0; getWorkspace(db, id); i++) {
+    if (i > 20) throw Object.assign(new Error("Could not find a free id for that name."), { code: "WORKSPACE_ID_TAKEN" });
+    id = `${base}-${deps.newId("w").replace(/[^a-z0-9]/g, "").slice(-6)}`;
+  }
+  const now = deps.now();
+  db.prepare("INSERT INTO workspaces (id, name, created_at, owner_sub) VALUES (?, ?, ?, ?)").run(id, name, now, ownerSub);
+  ensureSeeded(db, id, now);
+  return id;
 }
 
 const missingWorkspace = (id: unknown) => fail(404, "WORKSPACE_NOT_FOUND", `Workspace "${String(id).slice(0, 64)}" does not exist.`);
 
-export function listWorkspaces(db: Db): WorkspaceSummary[] {
+/** Offices owned by `ownerSub`. Omit it only in tests/maintenance to list every office. */
+export function listWorkspaces(db: Db, ownerSub?: string): WorkspaceSummary[] {
+  const filter = ownerSub === undefined ? "" : "WHERE w.owner_sub = ?";
   const rows = db
     .prepare(
       `SELECT w.id, w.name, w.created_at,
               (SELECT COUNT(*) FROM hires h WHERE h.workspace_id = w.id) AS team_size,
               (SELECT COUNT(*) FROM jobs j WHERE j.workspace_id = w.id) AS total_jobs,
               (SELECT COUNT(*) FROM jobs j WHERE j.workspace_id = w.id AND j.status IN ('needs_worker', 'queued', 'working')) AS open_jobs
-         FROM workspaces w ORDER BY w.created_at, w.id`,
+         FROM workspaces w ${filter} ORDER BY w.created_at, w.id`,
     )
-    .all() as unknown as (WorkspaceRow & { team_size: number; total_jobs: number; open_jobs: number })[];
+    .all(...(ownerSub === undefined ? [] : [ownerSub])) as unknown as (WorkspaceRow & { team_size: number; total_jobs: number; open_jobs: number })[];
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -91,21 +157,22 @@ export function listWorkspaces(db: Db): WorkspaceSummary[] {
   }));
 }
 
-export function createWorkspace(db: Db, deps: ServiceDeps, req: { name: unknown }): Result<{ workspace: WorkspaceSummary }> {
+export function createWorkspace(
+  db: Db,
+  deps: ServiceDeps,
+  req: { name: unknown; ownerSub?: string | null },
+): Result<{ workspace: WorkspaceSummary }> {
   const name = typeof req.name === "string" ? req.name.replace(/\s+/g, " ").trim() : "";
   if (name.length < 1 || name.length > 60) return fail(400, "INVALID_NAME", "Office name must be 1–60 characters.");
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "office";
-  return transaction(db, () => {
-    let id = base;
-    for (let i = 0; getWorkspace(db, id); i++) {
-      if (i > 20) return fail(409, "WORKSPACE_ID_TAKEN", "Could not find a free id for that name.");
-      id = `${base}-${deps.newId("w").replace(/[^a-z0-9]/g, "").slice(-6)}`;
-    }
-    const now = deps.now();
-    db.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(id, name, now);
-    ensureSeeded(db, id, now);
-    return { ok: true as const, workspace: listWorkspaces(db).find((w) => w.id === id)! };
-  });
+  try {
+    return transaction(db, () => {
+      const id = insertWorkspace(db, deps, name, req.ownerSub ?? null);
+      return { ok: true as const, workspace: listWorkspaces(db).find((w) => w.id === id)! };
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === "WORKSPACE_ID_TAKEN") return fail(409, "WORKSPACE_ID_TAKEN", "Could not find a free id for that name.");
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -111,7 +111,7 @@ test("v1 data migrates into the default workspace with a backup", () => {
   const migrated = openDb(legacy);
   db = migrated;
 
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 2);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, SCHEMA_VERSION);
   assert.deepEqual(listWorkspaces(db).map((w) => w.id), [DEFAULT_WORKSPACE_ID]);
   assert.equal(count("SELECT COUNT(*) AS n FROM hires WHERE workspace_id = 'default'"), 2);
   assert.equal(count("SELECT COUNT(*) AS n FROM jobs WHERE workspace_id = 'default'"), 2);

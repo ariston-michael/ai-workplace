@@ -1,5 +1,6 @@
 import { validateLookupRequest, type LookupError, type LookupResponse } from "@/lib/procurement";
 import { lookupPart, procurementMode } from "@/lib/procurement-provider.server";
+import { requireViewer } from "@/lib/workplace/runtime.server";
 
 const STATUS_BY_CODE: Record<LookupError["code"], number> = {
   INVALID_REQUEST: 400,
@@ -22,6 +23,10 @@ function errorResponse(error: LookupError) {
 
 // Uses the fixture unless PROCUREMENT_MODE=live, so local testing spends no TinyFish credits.
 export async function POST(request: Request) {
+  // Live mode spends TinyFish credits, so the lookup requires a signed-in user.
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+
   let body: unknown;
   try {
     body = await request.json();
