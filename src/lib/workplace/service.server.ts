@@ -18,7 +18,7 @@ import {
   type SkillId,
 } from "./catalog.ts";
 import { routeJob, type TeamMember } from "./dispatcher.ts";
-import { transaction, type Db } from "./db.server.ts";
+import { DEFAULT_WORKSPACE_ID, transaction, type Db } from "./db.server.ts";
 import type {
   ApiError,
   HireView,
@@ -29,13 +29,14 @@ import type {
   ReportMode,
   ReportOutcome,
   WorkplaceState,
+  WorkspaceSummary,
 } from "./types.ts";
 import { validateLookupRequest, findSupplier, type LookupMode, type LookupResponse, type Supplier } from "../procurement.ts";
 import { SCENARIOS, runScenario } from "../camera-incident.ts";
 import { cameraReport } from "../office-camera-report.ts";
 import { interpretRequest, STATION, type TranscriptLine } from "./intake.ts";
 
-export const WORKSPACE_ID = "demo";
+export { DEFAULT_WORKSPACE_ID };
 /** A job still "working" after this long was interrupted (e.g. server restart). */
 export const STALE_WORKING_MS = 10 * 60 * 1000;
 
@@ -52,6 +53,60 @@ export function defaultIds(prefix: string): string {
 type Result<T> = ({ ok: true } & T) | { ok: false; status: number; error: ApiError };
 
 const fail = (status: number, code: string, message: string) => ({ ok: false as const, status, error: { code, message } });
+
+// ---------------------------------------------------------------------------
+// Workspaces
+// ---------------------------------------------------------------------------
+
+interface WorkspaceRow {
+  id: string;
+  name: string;
+  created_at: number;
+}
+
+export function getWorkspace(db: Db, id: unknown): WorkspaceRow | undefined {
+  if (typeof id !== "string" || !/^[a-z0-9-]{1,64}$/.test(id)) return undefined;
+  return db.prepare("SELECT id, name, created_at FROM workspaces WHERE id = ?").get(id) as unknown as WorkspaceRow | undefined;
+}
+
+const missingWorkspace = (id: unknown) => fail(404, "WORKSPACE_NOT_FOUND", `Workspace "${String(id).slice(0, 64)}" does not exist.`);
+
+export function listWorkspaces(db: Db): WorkspaceSummary[] {
+  const rows = db
+    .prepare(
+      `SELECT w.id, w.name, w.created_at,
+              (SELECT COUNT(*) FROM hires h WHERE h.workspace_id = w.id) AS team_size,
+              (SELECT COUNT(*) FROM jobs j WHERE j.workspace_id = w.id) AS total_jobs,
+              (SELECT COUNT(*) FROM jobs j WHERE j.workspace_id = w.id AND j.status IN ('needs_worker', 'queued', 'working')) AS open_jobs
+         FROM workspaces w ORDER BY w.created_at, w.id`,
+    )
+    .all() as unknown as (WorkspaceRow & { team_size: number; total_jobs: number; open_jobs: number })[];
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    createdAt: r.created_at,
+    teamSize: r.team_size,
+    totalJobs: r.total_jobs,
+    openJobs: r.open_jobs,
+  }));
+}
+
+export function createWorkspace(db: Db, deps: ServiceDeps, req: { name: unknown }): Result<{ workspace: WorkspaceSummary }> {
+  const name = typeof req.name === "string" ? req.name.replace(/\s+/g, " ").trim() : "";
+  if (name.length < 1 || name.length > 60) return fail(400, "INVALID_NAME", "Office name must be 1–60 characters.");
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "office";
+  return transaction(db, () => {
+    let id = base;
+    for (let i = 0; getWorkspace(db, id); i++) {
+      if (i > 20) return fail(409, "WORKSPACE_ID_TAKEN", "Could not find a free id for that name.");
+      id = `${base}-${deps.newId("w").replace(/[^a-z0-9]/g, "").slice(-6)}`;
+    }
+    const now = deps.now();
+    db.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(id, name, now);
+    ensureSeeded(db, id, now);
+    return { ok: true as const, workspace: listWorkspaces(db).find((w) => w.id === id)! };
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Rows
@@ -130,18 +185,20 @@ export function ensureSeeded(db: Db, ws: string, now: number) {
     db.prepare(
       `INSERT OR IGNORE INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at)
        VALUES (?, ?, ?, ?, ?, ?, 'staff', ?, ?)`,
-    ).run(`staff_${profile.id}`, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, STAFF_DESK, now);
+    ).run(ws === DEFAULT_WORKSPACE_ID ? `staff_${profile.id}` : `staff_${ws}_${profile.id}`, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, STAFF_DESK, now);
   }
 }
 
-export function resetWorkspace(db: Db, ws: string, now: number) {
-  transaction(db, () => {
-    db.prepare("DELETE FROM reports WHERE job_id IN (SELECT id FROM jobs WHERE workspace_id = ?)").run(ws);
+export function resetWorkspace(db: Db, ws: string, now: number): Result<{ workspaceId: string }> {
+  if (!getWorkspace(db, ws)) return missingWorkspace(ws);
+  return transaction(db, () => {
+    db.prepare("DELETE FROM reports WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM job_events WHERE job_id IN (SELECT id FROM jobs WHERE workspace_id = ?)").run(ws);
     db.prepare("DELETE FROM jobs WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM hires WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM simulator_settings WHERE workspace_id = ?").run(ws);
     ensureSeeded(db, ws, now);
+    return { ok: true as const, workspaceId: ws };
   });
 }
 
@@ -175,6 +232,7 @@ export function getCameraFault(db: Db, ws: string): string {
 }
 
 export function setCameraFault(db: Db, ws: string, fault: unknown): Result<{ cameraFault: string }> {
+  if (!getWorkspace(db, ws)) return missingWorkspace(ws);
   const scenario = SCENARIOS.find((s) => s.id === fault);
   if (!scenario) return fail(400, "UNKNOWN_FAULT", "Choose one of the simulated camera faults.");
   db.prepare(
@@ -200,6 +258,7 @@ export function submitRequest(
   ws: string,
   req: { clientRequestId: unknown; request: unknown; pending?: unknown },
 ): RequestOutcome {
+  if (!getWorkspace(db, ws)) return missingWorkspace(ws);
   const interpretation = interpretRequest(req.request, req.pending);
   switch (interpretation.kind) {
     case "invalid":
@@ -224,6 +283,7 @@ export function submitRequest(
 }
 
 export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInput): Result<{ jobId: string; runJobIds: string[] }> {
+  if (!getWorkspace(db, ws)) return missingWorkspace(ws);
   if (typeof req.clientRequestId !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(req.clientRequestId)) {
     return fail(400, "INVALID_REQUEST", "clientRequestId must be 8–100 letters, digits, '-' or '_'.");
   }
@@ -307,6 +367,7 @@ export function approveHire(
   ws: string,
   req: HireInput,
 ): Result<{ hireId: string; created: boolean; runJobIds: string[] }> {
+  if (!getWorkspace(db, ws)) return missingWorkspace(ws);
   const profile = MARKETPLACE.find((p) => p.id === req.profileId);
   if (!profile) return fail(400, "UNKNOWN_PROFILE", "That worker is not in the marketplace.");
   if (req.jobId !== undefined && typeof req.jobId !== "string") return fail(400, "INVALID_REQUEST", "jobId must be a string.");
@@ -375,7 +436,7 @@ export async function runJob(db: Db, deps: ServiceDeps, jobId: string): Promise<
   if (claim.changes !== 1) return;
 
   const job = getJob(db, jobId)!;
-  const hire = db.prepare("SELECT * FROM hires WHERE id = ?").get(job.hire_id) as unknown as HireRow;
+  const hire = db.prepare("SELECT * FROM hires WHERE workspace_id = ? AND id = ?").get(job.workspace_id, job.hire_id) as unknown as HireRow;
   addEvent(db, jobId, startedAt, hire.role, "Left the desk to start work.");
 
   try {
@@ -423,10 +484,11 @@ export async function runJob(db: Db, deps: ServiceDeps, jobId: string): Promise<
     const runtimeMs = Math.max(0, finishedAt - startedAt);
     transaction(db, () => {
       db.prepare(
-        `INSERT INTO reports (id, job_id, hire_id, mode, outcome, summary, body, runtime_ms, hourly_rate_cents, demo_cost_cents, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO reports (id, workspace_id, job_id, hire_id, mode, outcome, summary, body, runtime_ms, hourly_rate_cents, demo_cost_cents, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         deps.newId("rpt"),
+        job.workspace_id,
         jobId,
         hire.id,
         mode,
@@ -475,7 +537,10 @@ export function recoverJobs(db: Db, ws: string, now: number): string[] {
 // Read
 // ---------------------------------------------------------------------------
 
-export function getState(db: Db, ws: string, procurementMode: LookupMode, now: number): WorkplaceState {
+/** Full state of one workspace, or null when it does not exist. */
+export function getState(db: Db, ws: string, procurementMode: LookupMode, now: number): WorkplaceState | null {
+  const workspace = getWorkspace(db, ws);
+  if (!workspace) return null;
   ensureSeeded(db, ws, now);
   const hireRows = hires(db, ws);
   const jobRows = db
@@ -492,7 +557,7 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
       }[])
     : [];
   const reports = ids.length
-    ? (db.prepare(`SELECT * FROM reports WHERE job_id IN (${placeholders})`).all(...ids) as unknown as ReportRow[])
+    ? (db.prepare(`SELECT * FROM reports WHERE workspace_id = ? AND job_id IN (${placeholders})`).all(ws, ...ids) as unknown as ReportRow[])
     : [];
   const completedCounts = db
     .prepare("SELECT hire_id, COUNT(*) AS n FROM jobs WHERE workspace_id = ? AND status = 'completed' GROUP BY hire_id")
@@ -554,6 +619,7 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
 
   return {
     workspaceId: ws,
+    workspace: { id: workspace.id, name: workspace.name },
     procurementMode,
     team,
     jobs,

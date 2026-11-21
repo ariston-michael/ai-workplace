@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { openDb } from "../src/lib/workplace/db.server.ts";
+import { openDb, DEFAULT_WORKSPACE_ID } from "../src/lib/workplace/db.server.ts";
 import { readSavedJobs } from "../src/lib/workflow/read-jobs.server.ts";
-import { submitJob, approveHire, runJob, getState, setCameraFault, type ServiceDeps } from "../src/lib/workplace/service.server.ts";
+import { submitJob, approveHire, runJob, getState, setCameraFault, createWorkspace, type ServiceDeps } from "../src/lib/workplace/service.server.ts";
 import { lookupPart } from "../src/lib/procurement-provider.server.ts";
 
 process.env.PROCUREMENT_FIXTURE_DELAY_MS = "0";
@@ -37,16 +37,16 @@ test("workflow returns saved routing and fixture reports without recomputing the
   const fixture = setup();
   const { db, deps, file } = fixture;
   try {
-    const request = submitJob(db, deps, "demo", { clientRequestId: "workflow-part-request", type: "supplier_lookup", input: { partName: "Raspberry Pi 5 4GB", supplierId: "adafruit" } });
+    const request = submitJob(db, deps, DEFAULT_WORKSPACE_ID, { clientRequestId: "workflow-part-request", type: "supplier_lookup", input: { partName: "Raspberry Pi 5 4GB", supplierId: "adafruit" } });
     assert.ok(request.ok);
     const waiting = readSavedJobs(file)[0];
     assert.equal(waiting.status, "needs_worker");
     assert.equal(waiting.report, null);
     assert.match(waiting.events.filter(event => event.actor === "Dispatcher").map(event => event.text).join(" "), /Recommending Procurement Researcher/);
-    const hire = approveHire(db, deps, "demo", { profileId: "procurement_researcher", jobId: request.jobId });
+    const hire = approveHire(db, deps, DEFAULT_WORKSPACE_ID, { profileId: "procurement_researcher", jobId: request.jobId });
     assert.ok(hire.ok);
     await runJob(db, deps, request.jobId);
-    assert.deepEqual(readSavedJobs(file), getState(db, "demo", "sample", deps.now()).jobs);
+    assert.deepEqual(readSavedJobs(file), getState(db, DEFAULT_WORKSPACE_ID, "sample", deps.now())!.jobs);
     assert.equal(readSavedJobs(file)[0].report?.mode, "sample");
   } finally { fixture.close(); }
 });
@@ -55,8 +55,8 @@ test("workflow preserves report completion separately from the unresolved camera
   const fixture = setup();
   const { db, deps, file } = fixture;
   try {
-    setCameraFault(db, "demo", "service-stopped-no-frame");
-    const request = submitJob(db, deps, "demo", { clientRequestId: "workflow-camera-open", type: "camera_incident", input: { scenarioId: "service-stopped-no-frame" } });
+    setCameraFault(db, DEFAULT_WORKSPACE_ID, "service-stopped-no-frame");
+    const request = submitJob(db, deps, DEFAULT_WORKSPACE_ID, { clientRequestId: "workflow-camera-open", type: "camera_incident", input: { scenarioId: "service-stopped-no-frame" } });
     assert.ok(request.ok);
     await runJob(db, deps, request.jobId);
     const job = readSavedJobs(file)[0];
@@ -75,7 +75,8 @@ test("workflow cannot recover or run queued/stale jobs, and does not read other 
   const fixture = setup();
   const { db, deps, file } = fixture;
   try {
-    for (const ws of ["demo", "another-workspace"]) {
+    assert.ok(createWorkspace(db, deps, { name: "another-workspace" }).ok);
+    for (const ws of [DEFAULT_WORKSPACE_ID, "another-workspace"]) {
       const request = submitJob(db, deps, ws, { clientRequestId: `workflow-${ws}-camera`, type: "camera_incident", input: { scenarioId: "camera-missing" } });
       assert.ok(request.ok);
     }
@@ -87,8 +88,8 @@ test("workflow cannot recover or run queued/stale jobs, and does not read other 
     assert.equal(jobs[0].report, null);
     assert.deepEqual(db.prepare("SELECT * FROM jobs ORDER BY id").all(), before);
     assert.deepEqual(db.prepare("SELECT * FROM job_events ORDER BY id").all(), events);
-    db.prepare("UPDATE jobs SET status = 'working', started_at = 0 WHERE workspace_id = 'demo'").run();
+    db.prepare("UPDATE jobs SET status = 'working', started_at = 0 WHERE workspace_id = 'default'").run();
     assert.equal(readSavedJobs(file)[0].status, "working");
-    assert.equal(db.prepare("SELECT status FROM jobs WHERE workspace_id = 'demo'").get()?.status, "working");
+    assert.equal(db.prepare("SELECT status FROM jobs WHERE workspace_id = 'default'").get()?.status, "working");
   } finally { fixture.close(); }
 });

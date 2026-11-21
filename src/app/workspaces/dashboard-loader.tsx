@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { WorkspaceSummary } from "@/lib/workplace/types";
 import WorkspaceDashboard, { type WorkspaceCard } from "./dashboard";
 
-type WorkspaceRecord = { id: string; name: string; teamSize: number; totalJobs: number; openJobs: number };
 
 export default function DashboardLoader() {
   const [workspaces, setWorkspaces] = useState<WorkspaceCard[]>([]);
@@ -18,7 +18,7 @@ export default function DashboardLoader() {
         const response = await fetch("/api/workspaces", { cache: "no-store", signal: controller.signal });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error?.message ?? "Saved workspaces could not be loaded.");
-        setWorkspaces(data.workspaces.map((workspace: WorkspaceRecord) => ({
+        setWorkspaces(data.workspaces.map((workspace: WorkspaceSummary) => ({
           id: workspace.id, name: workspace.name, workerCount: workspace.teamSize,
           jobCount: workspace.totalJobs, activeJobCount: workspace.openJobs,
         })));

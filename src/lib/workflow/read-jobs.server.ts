@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { defaultDbPath } from "../workplace/db.server.ts";
+import { defaultDbPath, DEFAULT_WORKSPACE_ID } from "../workplace/db.server.ts";
 import type { JobView, JobEventView, ReportView } from "../workplace/types.ts";
 
 type JobRow = Omit<JobView, "input" | "error" | "events" | "report"> & { input: string; error: string | null };
@@ -8,7 +8,7 @@ type EventRow = JobEventView & { jobId: string };
 type ReportRow = Omit<ReportView, "body"> & { jobId: string; body: string };
 
 /** Snapshot only: never seed, recover, schedule, or run jobs when viewing history. */
-export function readSavedJobs(file = defaultDbPath(), workspaceId = "demo"): JobView[] {
+export function readSavedJobs(file = defaultDbPath(), workspaceId = DEFAULT_WORKSPACE_ID): JobView[] {
   if (!existsSync(file)) return [];
   const db = new DatabaseSync(file, { readOnly: true });
   try {

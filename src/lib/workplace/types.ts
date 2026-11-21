@@ -74,8 +74,18 @@ export interface JobView {
   report: ReportView | null;
 }
 
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  createdAt: number;
+  teamSize: number;
+  totalJobs: number;
+  openJobs: number;
+}
+
 export interface WorkplaceState {
   workspaceId: string;
+  workspace: { id: string; name: string };
   procurementMode: LookupMode;
   team: HireView[];
   jobs: JobView[];

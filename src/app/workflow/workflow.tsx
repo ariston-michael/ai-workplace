@@ -95,7 +95,7 @@ function JobDetail({ job, headingRef }: { job: JobView; headingRef: React.RefObj
 
 export default function Workflow() {
   const query = useSearchParams();
-  const workspaceId = query.get("workspace") || "demo";
+  const workspaceId = query.get("workspace") || "default";
   return <WorkflowContent key={workspaceId} workspaceId={workspaceId} requestedJobId={query.get("job")} />;
 }
 

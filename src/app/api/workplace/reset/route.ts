@@ -1,8 +1,7 @@
-import { getDb } from "@/lib/workplace/db.server";
-import { currentState } from "@/lib/workplace/runtime.server";
-import { resetWorkspace, WORKSPACE_ID } from "@/lib/workplace/service.server";
+import { DEFAULT_WORKSPACE_ID } from "@/lib/workplace/db.server";
+import { handleReset } from "@/lib/workplace/runtime.server";
 
-export async function POST() {
-  resetWorkspace(getDb(), WORKSPACE_ID, Date.now());
-  return Response.json({ ok: true, state: currentState() });
+/** Legacy alias for POST /api/workspaces/default/reset. */
+export function POST() {
+  return handleReset(DEFAULT_WORKSPACE_ID);
 }
