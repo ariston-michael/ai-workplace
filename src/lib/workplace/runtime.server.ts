@@ -36,6 +36,8 @@ import {
 import { lookupPart, procurementMode } from "../procurement-provider.server.ts";
 import { geminiConfig } from "../gemini.server.ts";
 import { dispatch } from "./dispatcher-ai.server.ts";
+import { sendSms, twilioConfig, twiml, validTwilioSignature } from "../sms/twilio.server.ts";
+import { createLinkCode, handleInboundSms, listLinks, notifySmsResult, unlinkPhone } from "../sms/sms.server.ts";
 import type { DispatcherInfo } from "./types.ts";
 
 /** Which engine the Dispatcher uses on this server (shown as a badge in the office). */
@@ -54,6 +56,9 @@ export function scheduleJobs(jobIds: string[]) {
     after(async () => {
       try {
         await runJob(getDb(), serviceDeps(), id);
+        // If the job was requested by text, send its result once.
+        const twilio = twilioConfig();
+        if (twilio) await notifySmsResult(getDb(), Date.now(), id, (to, body) => sendSms(twilio, to, body));
       } catch (err) {
         console.error(`[workplace] job ${id} crashed`, err);
       }
@@ -263,4 +268,48 @@ export async function handleAgentJob(request: Request, ref: WorkspaceRef, hireId
   if (!result.ok) return errorJson(result.status, result.error.code, result.error.message);
   scheduleJobs(result.runJobIds);
   return withState(auth.ws, { jobId: result.jobId });
+}
+
+// --- SMS (Twilio) ---------------------------------------------------------------
+
+/** Public Twilio webhook. Only requests signed with TWILIO_AUTH_TOKEN for TWILIO_WEBHOOK_URL are accepted. */
+export async function handleTwilioWebhook(request: Request) {
+  const twilio = twilioConfig();
+  if (!twilio) return new Response("SMS is not configured.", { status: 503 });
+  const raw = await request.text();
+  const params = [...new URLSearchParams(raw).entries()];
+  if (!validTwilioSignature(twilio.authToken, twilio.webhookUrl, params, request.headers.get("x-twilio-signature"))) {
+    console.warn("[sms] rejected a webhook with an invalid signature");
+    return new Response("Invalid signature.", { status: 403 });
+  }
+  const get = (k: string) => params.find(([key]) => key === k)?.[1] ?? "";
+  if (get("AccountSid") !== twilio.accountSid) return new Response("Wrong account.", { status: 403 });
+  const result = await handleInboundSms(getDb(), { ...serviceDeps(), dispatch: (text, pending, opts) => dispatch(text, pending, opts, geminiConfig()) }, {
+    messageSid: get("MessageSid"),
+    from: get("From"),
+    body: get("Body"),
+  });
+  scheduleJobs(result.runJobIds);
+  return new Response(twiml(result.reply), { headers: { "Content-Type": "text/xml; charset=utf-8" } });
+}
+
+/** Office side: SMS status, a new link code, or unlinking a phone. */
+export async function handleSmsSettings(request: Request | null, ref: WorkspaceRef) {
+  await connection();
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const db = getDb();
+  const twilio = twilioConfig();
+  let code: { code: string; expiresAt: number } | null = null;
+  if (request) {
+    const body = await readObject(request);
+    if (!body) return badBody();
+    if (body.action === "link_code") {
+      if (!twilio) return errorJson(503, "SMS_NOT_CONFIGURED", "Add the Twilio settings to .env.local and restart to text the Dispatcher.");
+      code = createLinkCode(db, Date.now(), auth.ws, auth.viewer.sub);
+    } else if (body.action === "unlink") {
+      if (!unlinkPhone(db, auth.ws, body.linkId)) return errorJson(404, "LINK_NOT_FOUND", "That phone is not linked to this office.");
+    } else return errorJson(400, "INVALID_REQUEST", "action must be link_code or unlink.");
+  }
+  return Response.json({ ok: true, sms: { configured: !!twilio, number: twilio?.phoneNumber ?? null, links: listLinks(db, auth.ws), code } }, { headers: { "Cache-Control": "no-store" } });
 }

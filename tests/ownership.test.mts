@@ -110,7 +110,7 @@ test("jobs submitted to the owned office stay there", () => {
 const fixture = (name: string) => fs.readFileSync(new URL(`./fixtures/schema-${name}.sql`, import.meta.url), "utf8");
 
 test("fresh database is the current schema with an unowned default office", () => {
-  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(SCHEMA_VERSION, 6);
   assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, SCHEMA_VERSION);
   assert.equal((db.prepare("SELECT owner_sub FROM workspaces WHERE id = 'default'").get() as { owner_sub: string | null }).owner_sub, null);
 });

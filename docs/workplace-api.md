@@ -108,6 +108,21 @@ Whitespace is collapsed. Errors answer `400 INVALID_LISTING` with `error.fields:
 
 Jobs run after the response is sent. While any job is `queued` or `working`, poll `GET /api/workspaces/{id}` (the office UI polls every 1 s). That GET also restarts queued jobs whose runner was lost and fails jobs stuck in `working` for over 10 minutes (`INTERRUPTED`).
 
+### Text the Dispatcher (SMS via Twilio)
+
+Enabled when `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` and `TWILIO_WEBHOOK_URL` are set.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/api/sms/twilio` | Twilio form webhook | TwiML `<Response><Message>…</Message></Response>`. Public, but `403` unless `X-Twilio-Signature` matches `TWILIO_WEBHOOK_URL` and the body, and `AccountSid` matches. `503` if SMS is off. |
+| GET | `/api/workspaces/{id}/sms` | — | `{ ok, sms: { configured, number, links: [{ id, phone: "•••1234", linkedAt }], code: null } }` |
+| POST | `/api/workspaces/{id}/sms` | `{ action: "link_code" }` or `{ action: "unlink", linkId }` | same, with `code: { code, expiresAt }` after `link_code` |
+
+- **Linking:** the office shows a 6-digit code (single use, 10 minutes). Texting `LINK 123456` (or just the digits) links that phone to the office; a phone links to one office at a time. Five failed attempts per phone per hour are refused.
+- **Texts act as the office owner** through the same Dispatcher (`dispatch` → `submitRequest`), routing and `approveHire`. Follow-up state is kept per phone for 30 minutes. `RESET` starts over, `HELP` lists commands, and opt-out keywords (STOP, START, …) get no reply because Twilio handles them.
+- **Jobs by text** get a 4-character job code (`JobView.sms = { code, phone }`). When a hire is needed the reply names the worker, rate and code; `APPROVE <code>` hires for this job only, `APPROVE <code> KEEP` keeps the worker on the team.
+- **Exactly once:** each `MessageSid` is logged before any work, so redelivered webhooks get the same reply and change nothing. Repeated approvals are no-ops (`approveHire` per job, `runJob` claim). Each result is texted once (`sms_outbox` unique per job). Results start with the report mode (`SAMPLE result, job K7P2: …`) and are recorded in the job's history.
+
 ## Data fields
 
 ### `WorkspaceSummary`
@@ -211,7 +226,7 @@ Desks are per workspace: every office has its own Workstation 01 (Quality Inspec
 | `UNSUPPORTED_ACTION` | 400 | worker has no inventory action |
 | `LISTING_LIMIT` | 409 | publisher already has 12 listings |
 
-## Database (schema v5, `PRAGMA user_version = 5`)
+## Database (schema v6, `PRAGMA user_version = 6`)
 
 File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Opening an older file migrates it automatically after writing `<file>.v<old version>-backup-<timestamp>`. Both earlier v4 variants (the `marketplace` and `marketplace-publishing` branches) are detected and upgraded; see [src/lib/workplace/migrate-v5.server.ts](../src/lib/workplace/migrate-v5.server.ts).
 
@@ -225,5 +240,11 @@ File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Openi
 | `reports` | `id`, `workspace_id`, `job_id`, `hire_id`, `mode` (incl. `local`), `outcome`, `body` | FK `(workspace_id, job_id)` → jobs and `(workspace_id, hire_id)` → hires |
 | `marketplace_listings` | `id`, `creator_sub`, `client_request_id`, `creator_name`, `character_name`, `role`, `description`, `greeting`, `sample_work`, `skills`, `hourly_rate_cents`, `action_config`, `sprite`, `published_at` | community only (official listings are code); unique `(creator_sub, client_request_id)` |
 | `simulator_settings` | `workspace_id` (PK), `camera_fault` | FK → workspaces |
+| `sms_links` | `phone` (PK, E.164), `workspace_id`, `owner_sub`, `linked_at` | one office per phone |
+| `sms_link_codes` | `code_hash` (sha256), `workspace_id`, `owner_sub`, `expires_at`, `used_at` | single use |
+| `sms_inbound` | `message_sid` (PK), `phone`, `kind`, `reply` | duplicate-delivery log |
+| `sms_conversations` | `phone`, `workspace_id`, `client_request_id`, `pending` | Dispatcher follow-ups by text |
+| `sms_jobs` | `job_id`, `workspace_id`, `code`, `phone` | FK → jobs (cascade) |
+| `sms_outbox` | `job_id`, `kind`, `phone`, `body`, `status`, `twilio_sid`, `error` | one result text per job |
 
 Reset deletes that workspace's reports, events, jobs, hire history, hires and simulator settings, then reseeds the Quality Inspector. There is no delete-workspace route yet.

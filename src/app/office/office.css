@@ -337,3 +337,11 @@
 .office-deskDetails { margin: 18px 0; padding: 12px 14px; border: 1px solid #b7cbd8; border-left: 3px solid #2f79a9; border-radius: 4px; background: #edf4f7; }
 .office-deskDetails h3 { margin: 0 0 6px; font-size: 13px; color: #244c68; }
 .office-deskDetails p { margin: 5px 0; font-size: 11px; color: #4c6778; line-height: 1.65; }
+/* Text the Dispatcher */
+.office-sms { margin: 18px 0; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #fbfaf4; }
+.office-smsLinks { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; font-size: 12px; }
+.office-smsLinks li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.office-smsCode { margin: 10px 0 4px; padding: 10px 12px; border: 1px dashed #9fb3a3; border-radius: 7px; background: #f4f7ef; font-size: 12px; }
+.office-smsCode p { margin: 0 0 6px; }
+.office-smsCodeValue { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 22px !important; font-weight: 700; letter-spacing: 3px; color: #2e493e; }
+.office-smsJob strong { font-family: var(--font-geist-mono), ui-monospace, monospace; letter-spacing: 1px; }

@@ -301,7 +301,8 @@ function afterJob(db: Db, job: JobRow, hire: HireRow, at: number, outcome: strin
   }
 }
 
-function addEvent(db: Db, jobId: string, at: number, actor: string, text: string) {
+/** Append to a job's saved history (also used by the SMS channel). */
+export function addEvent(db: Db, jobId: string, at: number, actor: string, text: string) {
   db.prepare("INSERT INTO job_events (job_id, at, actor, text) VALUES (?, ?, ?, ?)").run(jobId, at, actor, text);
 }
 
@@ -329,6 +330,10 @@ export function resetWorkspace(db: Db, ws: string, now: number): Result<{ worksp
   return transaction(db, () => {
     db.prepare("DELETE FROM reports WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM job_events WHERE job_id IN (SELECT id FROM jobs WHERE workspace_id = ?)").run(ws);
+    // SMS job codes, sent results and open text conversations go with the jobs; phone links stay.
+    db.prepare("DELETE FROM sms_outbox WHERE workspace_id = ?").run(ws);
+    db.prepare("DELETE FROM sms_jobs WHERE workspace_id = ?").run(ws);
+    db.prepare("DELETE FROM sms_conversations WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM jobs WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM hire_events WHERE workspace_id = ?").run(ws);
     db.prepare("DELETE FROM hires WHERE workspace_id = ?").run(ws);
@@ -885,11 +890,15 @@ export function getState(
     };
   };
   const team = hireRows.map(view);
+  const smsJobs = ids.length
+    ? (db.prepare(`SELECT job_id, code, phone FROM sms_jobs WHERE workspace_id = ? AND job_id IN (${placeholders})`).all(ws, ...ids) as unknown as { job_id: string; code: string; phone: string }[])
+    : [];
   const formerHires = formerRows.map(view);
   const anyHire = (id: string | null) => allRows.find((h) => h.id === id) ?? (id ? getHire(db, ws, id) : undefined);
 
   const jobs: JobView[] = jobRows.map((j) => {
     const r = reports.find((x) => x.job_id === j.id);
+    const sms = smsJobs.find((x) => x.job_id === j.id);
     return {
       id: j.id,
       type: j.type,
@@ -899,6 +908,7 @@ export function getState(
       status: j.status,
       hireId: j.hire_id,
       hireRole: anyHire(j.hire_id)?.role ?? null,
+      sms: sms ? { code: sms.code, phone: `•••${sms.phone.slice(-4)}` } : null,
       hireName: (() => { const h = anyHire(j.hire_id); return h ? snapshot(h).characterName : null; })(),
       recommendedProfileId: j.recommended_profile_id,
       createdAt: j.created_at,
