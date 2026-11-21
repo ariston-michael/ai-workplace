@@ -28,4 +28,14 @@
 .office-characterPortrait.office-character-quality_inspector { background: #f6e9bd; }
 .office-characterPortrait.office-character-procurement_researcher { background: #ccebe6; }
 .office-characterPortrait.office-character-catalog_assistant { background: #e8def4; }
+.office-characterPortrait.office-character-custom { background: color-mix(in srgb, var(--character-accent, #7d8a99) 22%, #fbfaf5); }
+.office-character[data-fixed-facing] .office-facing { display: inline; }
+.office-character[data-stroll] .office-pose { animation: characterSteps .56s step-end infinite; }
+.office-character[data-stroll] .office-pose-1 { animation-delay: -.42s; }
+.office-character[data-stroll] .office-pose-2 { animation-delay: -.28s; }
+.office-character[data-stroll] .office-pose-3 { animation-delay: -.14s; }
+.pixel-verified { display: inline-block; vertical-align: -3px; flex: 0 0 auto; }
 @media (prefers-reduced-motion: reduce) { .office-character *, .office-mapWalker[data-travel="walking"] .office-character * { animation: none !important; } .office-character .office-pose { visibility: hidden; } .office-character .office-pose-0 { visibility: visible; } }
+.pixel-listingBadge { display: inline-flex; align-items: center; gap: 5px; margin: 3px 0; padding: 2px 7px 2px 5px; border: 1px solid #d9d6c8; border-radius: 3px; background: #f6f4ec; color: #4d5a57; font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1.5; }
+.pixel-listingOfficial { border-color: #b8cdf3; background: #eef3fd; color: #1d3f8f; }
+.pixel-listingCommunity { border-color: #e4d6b5; background: #fbf5e6; color: #6b5420; }

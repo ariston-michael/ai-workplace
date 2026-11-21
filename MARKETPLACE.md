@@ -1,51 +1,100 @@
-# Publishing and hiring community agents
+# Marketplace, community agents and the Gemini Dispatcher
 
-Open `/marketplace` while signed in. The Workspaces dashboard and vacant-desk
-marketplace also link to it. Every signed-in user can publish a community listing.
-A listing saves its Auth0 creator subject (server-side only), public creator name,
-pixel avatar, supported skills, demo hourly rate in cents, permissions, supported
-action and configuration. Publishing is idempotent per creator/request ID.
+This branch combines `marketplace` (standalone marketplace, sprite builder, workspace
+picker) with `marketplace-publishing` at 8c0ba4c (inventory CSV audit, private
+reports). It adds the Gemini Dispatcher and hire retention on top. Routes and fields
+are in [docs/workplace-api.md](docs/workplace-api.md).
 
-Only server-seeded, company-managed listings carry **Official · AI Workplace**.
-Community publishing always stores `publisher_kind = 'community'`; attempts to
-supply an official badge, company kind or creator identity are rejected. No public
-route can edit a listing or promote one to official. Creator subject IDs are
-never included in marketplace responses.
+## Listings
 
-## First executable action: inventory CSV audit
+- **Official** listings (Ro, Kit) are defined in code. They carry the blue pixel check
+  and "Official · AI Workplace". No route can create, edit or promote a listing to
+  official. A publish request that includes a badge, kind, creator identity or
+  permissions is rejected.
+- **Community** listings are published by any signed-in user from **Publish agent**
+  on `/marketplace`:
+  - An original pixel sprite built from fixed parts, with a live preview of all four
+    facings.
+  - Name, role, greeting, 1–3 skills, rate and sample work.
+  - For the **Inventory audit** skill, a low-stock minimum and a restock target.
+- **Permissions** come from the skills and are fixed by the server.
+- The creator's Auth0 `sub` is stored server-side only. Responses show just the
+  public creator name.
+- **Hiring** saves an unchangeable copy of the listing: sprite, rate, permissions and
+  inventory thresholds. The exact character walks into the office. A later listing
+  change cannot alter a hire or the settings its runner uses.
 
-A creator chooses a pixel avatar, name, description, hourly rate, low-stock
-minimum and restock target. Its supported skill is Inventory audit, and its fixed
-permissions allow reading only the inventory supplied to a job and calculating
-stock findings locally. It cannot browse websites, purchase anything, execute
-creator code, or access another workspace.
+## Inventory CSV audit (real local execution)
 
-The action is a real server execution over the hirer's submitted input. It does
-not use fixtures or a provider, and it does not just replay demo events. Each row
-below the minimum is flagged and gets `target - quantity` restock units; other
-rows get zero. The report includes the input SHA-256, CSV line numbers, observed
-quantities, configured thresholds, row findings and totals. Reports are labeled
-**EXECUTED LOCALLY**, distinct from SAMPLE supplier fixtures and SIMULATED camera
-reports. Invalid CSV leaves a failed job with an error and no fabricated report.
+- **Input:** a `sku,quantity` header, 1–500 rows and at most 50,000 characters.
+  - SKUs are unique ignoring case, at most 120 characters.
+  - Quantities are whole numbers from 0 to 1,000,000,000.
+  - Quoted commas and escaped quotes are supported. Quoted values spanning lines are
+    rejected.
+- **Rule:** a row below the minimum is flagged and gets `target - quantity` restock
+  units.
+- **Report:** labelled **EXECUTED LOCALLY**. It includes the input SHA-256, CSV line
+  numbers and totals.
+- **Invalid CSV:** the job fails, and no report is fabricated.
+- **Privacy:** the CSV and report stay in the hirer's office. The listing's creator
+  cannot see the hirer's office, input, jobs or reports.
+- **Two ways to run it:** a kept inventory worker has a **Run inventory audit** form
+  in its profile. Or ask the Dispatcher ("Which items are low on stock?") and attach
+  the CSV.
 
-Input format: `sku,quantity` header, 1–500 rows, maximum 50,000 characters. SKUs
-must be unique ignoring case, at most 120 characters; quantities must be whole
-numbers from 0 to 1,000,000,000. Quoted commas and escaped quotes are supported;
-quoted values spanning multiple lines are rejected. Thresholds are integers,
-with `1 <= minimum <= target <= 100000`.
+## Gemini Dispatcher
 
-## Try with two accounts
+The office badge shows the engine in use: **DISPATCHER: GEMINI · model** or
+**BUILT-IN RULES**.
 
-1. At http://localhost:3001/marketplace, account A expands **Publish an agent**.
-   Name it Shelf Scout, choose an avatar and $6.50/hour, and set minimum 5 and
-   target 12. Accept the displayed permissions and publish. It appears as a
-   community agent attributed to A, with no official badge.
-2. In a private browser, sign in as B. Open **Agent marketplace**, select B's
-   office, and choose Shelf Scout's **Review hire in office**. Review its skills,
-   rate, permissions and action, then **Hire Shelf Scout**. The saved hire walks
-   into the office; its profile has the chosen avatar and a **Run inventory audit**
-   form. An existing hire is reused rather than charged/hired twice.
-3. Submit this CSV through B's worker profile:
+**With `GEMINI_API_KEY` set, Gemini (structured JSON output) reads the conversation and
+proposes:**
+- one of `supplier_lookup`, `camera_incident`, `inventory_audit` or unsupported;
+- the part name and supplier it heard;
+- the wording of a follow-up question.
+
+**The server checks every proposal:**
+- Only approved suppliers are accepted.
+- A part name is accepted only if the user actually typed it.
+- Whether a CSV is attached is decided by the server, not by Gemini.
+- Gemini never decides who works, whether to hire, rates or permissions; routing stays
+  in `dispatcher.ts`.
+
+**Never sent to Gemini:** inventory CSV contents (it is told only that one is
+attached). The key goes only in the `x-goog-api-key` header.
+
+**Fallback:** without a key, or if Gemini fails (auth, quota, timeout, blocked, invalid
+output), the built-in rules answer. The reply says why, and the job history records
+which engine understood the request.
+
+## Who does the work
+
+1. The Dispatcher reuses a qualified worker **kept on the team** first.
+2. Otherwise it recommends a hire: official listings before community ones, then the
+   lowest rate.
+3. Approval offers **For this job** (the default) or **Keep on team**, plus optional
+   instructions. The instructions are saved with the hire and added to each job brief.
+4. A job-only worker can be switched to **Keep on team** while its job runs.
+5. When execution finishes:
+   - The demo meter stops and the report is saved.
+   - The worker returns to reception.
+   - A job-only worker then walks out and frees its desk; a kept worker walks back to
+     its desk.
+6. Reports stay in workflow history after a worker leaves.
+7. Each hire's instructions and history (hired, assigned, kept, returned, left) are
+   saved in its workspace. A kept worker can be released from its profile.
+
+## Try it
+
+Add `GEMINI_API_KEY=…` to `.env.local` and restart. Without a key, the same steps use
+the built-in rules.
+
+1. As account A, open `/marketplace` and click **Publish agent**. Build a sprite and
+   name the agent Shelf Scout, with **Inventory audit**, minimum 5, target 12 and
+   $6.50/h. It appears under **Community**, credited to A, with no blue check.
+2. As account B, open **Marketplace** from the dashboard and hire Shelf Scout. The
+   workspace picker opens. Shelf Scout walks into B's office.
+3. In its profile, run this audit. Expect 3 SKUs, 2 below minimum and 21 restock units.
 
    ```csv
    sku,quantity
@@ -54,67 +103,40 @@ with `1 <= minimum <= target <= 100000`.
    WASHER,0
    ```
 
-   The actual audit returns 3 SKUs checked, 2 below minimum and 21 restock units
-   (9 for the bolt, 0 for the motor and 12 for the washer). Click **View report**
-   for the evidence; the workflow link opens this job's saved history.
-4. Copy B's office and workflow URLs and open them as A. A sees no office map or
-   job/report data. The APIs return 404. Publishing an agent grants no access to
-   its hirers, their inputs, jobs, reports or action execution endpoints.
-
-The hire saves an immutable copy of its listing, including rate, permissions,
-avatar and action configuration. A later catalog change cannot rewrite a hired
-contract or change the settings used by the runner. Demo rates are displayed and
-snapshotted; no actual payments are collected. Community actions are launched
-explicitly from their worker profiles; the Dispatcher's existing supplier/camera
-free-text intake remains available.
-
-## Persistence and API
-
-Schema v4 adds `marketplace_listings`, `hires.listing_snapshot` and the `local`
-report mode. Existing data is backed up before migration; jobs, reports and
-ownership are preserved. Keep this worktree's database separate from older apps.
-
-- `GET /api/marketplace`: signed-in catalog, own listing IDs, display name.
-- `POST /api/marketplace`: publish a supported community agent under the session's
-  identity. Required fields: `clientRequestId`, `name`, `description`, `avatarId`,
-  `hourlyRateCents`, `skills: ["inventory_audit"]`, the declared permission strings,
-  and `action: {id: "inventory_audit", config: {minimumQuantity, targetQuantity}}`.
-- `POST /api/workspaces/:workspaceId/hires`: existing hire flow, now accepts
-  published listing IDs and stores a listing snapshot.
-- `POST /api/workspaces/:workspaceId/agents/:hireId/jobs`: body `{clientRequestId,
-  csv}`. Checks office ownership and hire membership before accessing input or
-  scheduling the job. Action and configuration come from the hire, never this
-  request body. Repeat requests reuse the original job and report.
-- Existing state and read-only workflow endpoints remain owner scoped. Anonymous
-  requests return 401; unknown/foreign offices and hires return 404.
+4. Ask the Dispatcher: "Find a Raspberry Pi 5 4GB on Adafruit". Approve Ro with **For
+   this job**.
+   - The meter runs while Ro works.
+   - Ro brings the report to reception and leaves.
+   - **View this job’s workflow** still shows the report.
+5. Ask "Is the Qwiic cable 100mm in stock at SparkFun?" Approve, then click **Keep Ro on
+   team** while the job runs. Ro walks back to the desk afterwards. The next supplier
+   request goes straight to Ro.
+6. As A, open B's office or workflow URLs. A gets **OFFICE UNAVAILABLE** and 404 APIs.
 
 ## Verification
 
 ```bash
 npm ci
-npm test
-npm run lint
+npm test               # unit tests: listings, migrations, inventory, retention, Gemini (fake fetch)
+npm run lint && npm run typecheck
 npm run build
-npm run typecheck
 npm run test:marketplace
 ```
 
-The production browser check starts its own temporary local server, SQLite file,
-and two independent Auth0 SDK-encrypted fixture sessions. It opens the real UI
-for A to publish and B to hire, executes the action for real, verifies exact
-results and input fingerprint, follows the saved workflow, tests badge/creator/
-action spoofing, retries, anonymous access, foreign APIs/direct links, and mobile
-profile/report access. It adds no test authentication bypass to the application
-and never touches a real user's database or Auth0 credentials. Hosted Universal
-Login using two real accounts is a manual check with the steps above.
-
-The browser check uses installed Google Chrome on macOS, or Playwright Chromium
-(`npx playwright install chromium`). Optionally set
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a Chromium executable. Set
-`MARKETPLACE_SCREENSHOT_DIR` to save review screenshots outside the repo.
-
-Verified locally: 133 Node tests, lint, TypeScript, production build, and the
-production two-account browser flow all pass. Existing desktop/mobile office
-regressions also pass: company hiring, all four walking directions, 2,070 sampled
-positions with zero furniture collisions, saved report access, camera incident
-state, preserved Dispatcher drafts, reduced motion, reset and resize.
+`npm run test:marketplace` is the browser check:
+- **Setup:** it starts its own production server, temporary SQLite file and
+  Auth0-encrypted fixture sessions for two accounts, plus a local mock of Gemini's
+  `generateContent`.
+- **Credentials and credits:** no real database, Auth0 tenant, Gemini key or TinyFish
+  credits are used.
+- **Chrome:** it uses installed Google Chrome, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
+- **Screenshots:** set `MARKETPLACE_SCREENSHOT_DIR` to save them.
+- **What it covers:**
+  - publishing, spoof rejection and sprite fidelity
+  - a private local audit
+  - the Gemini badge and recorded interpretation
+  - job-only hire: meter, return and exit, with history after departure
+  - keep on team while running: return to the desk and reuse
+  - inventory requests through the Dispatcher with the CSV withheld from Gemini
+  - unsupported requests
+  - cross-account privacy and mobile layout

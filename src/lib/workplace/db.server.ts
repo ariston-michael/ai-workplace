@@ -9,16 +9,20 @@
 //      workspace's hire or job.
 //   3  workspaces.owner_sub: the Auth0 user (sub) who owns the office.
 //      NULL = unowned (data from before sign-in existed); hidden until claimed.
-//   4  published marketplace listings, immutable hire snapshots and local action reports.
+//   4  marketplace listings. Two variants exist (marketplace / marketplace-publishing
+//      branches); v5 detects which one it is upgrading.
+//   5  union of both v4s: community listings (sprite + optional inventory action),
+//      hires.snapshot (immutable listing copy), retention ('team' | 'job'),
+//      instructions, departures, hire_events history, and the 'local' report mode.
 
-import { MARKETPLACE } from "./catalog.ts";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { migrateV4toV5 } from "./migrate-v5.server.ts";
 
 export type Db = DatabaseSync;
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const DEFAULT_WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_NAME = "Default office";
 /** workspace_id used by schema v1 for all rows. */
@@ -160,36 +164,37 @@ function migrateV2toV3(db: Db) {
   `);
 }
 
-/** v3 → v4: published listings, immutable hire snapshots and real local reports. */
-function migrateV3toV4(db: Db, now: number) {
-  db.exec(`CREATE TABLE marketplace_listings (
-    id TEXT PRIMARY KEY,
-    creator_sub TEXT,
-    creator_name TEXT NOT NULL,
-    publisher_kind TEXT NOT NULL CHECK (publisher_kind IN ('company','community')),
-    name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    avatar_id TEXT NOT NULL,
-    skills TEXT NOT NULL,
-    hourly_rate_cents INTEGER NOT NULL CHECK (hourly_rate_cents BETWEEN 0 AND 100000),
-    permissions TEXT NOT NULL,
-    action_id TEXT NOT NULL,
-    action_config TEXT,
-    created_at INTEGER NOT NULL,
-    client_request_id TEXT NOT NULL,
-    CHECK ((publisher_kind = 'company' AND creator_sub IS NULL) OR (publisher_kind = 'community' AND creator_sub IS NOT NULL)),
-    UNIQUE (creator_sub, client_request_id)
-  );
-  ALTER TABLE hires ADD COLUMN listing_snapshot TEXT;
+/** v3 → v4: community listings and the hire's character snapshot. Additive. */
+function migrateV3toV4(db: Db) {
+  db.exec(`
+    CREATE TABLE marketplace_listings (
+      id                TEXT PRIMARY KEY CHECK (id GLOB 'community-*'),
+      owner_sub         TEXT NOT NULL CHECK (length(owner_sub) BETWEEN 1 AND 255),
+      client_request_id TEXT NOT NULL,
+      publisher_name    TEXT NOT NULL,
+      character_name    TEXT NOT NULL,
+      role              TEXT NOT NULL,
+      specialty         TEXT NOT NULL,
+      greeting          TEXT NOT NULL,
+      skills            TEXT NOT NULL,           -- JSON array of SkillId
+      hourly_rate_cents INTEGER NOT NULL CHECK (hourly_rate_cents BETWEEN 100 AND 5000),
+      sample_work       TEXT NOT NULL,
+      sprite            TEXT NOT NULL,           -- JSON CustomSprite
+      published_at      INTEGER NOT NULL,
+      UNIQUE (owner_sub, client_request_id)
+    );
+    CREATE INDEX listings_by_published ON marketplace_listings (published_at);
+    ALTER TABLE hires ADD COLUMN character_name TEXT;
+    ALTER TABLE hires ADD COLUMN sprite TEXT;   -- JSON SpriteSpec snapshot at hire time
+    ALTER TABLE hires ADD COLUMN listing_kind TEXT CHECK (listing_kind IS NULL OR listing_kind IN ('official', 'community'));
+    ALTER TABLE hires ADD COLUMN publisher_name TEXT;
+    UPDATE hires SET listing_kind = 'official' WHERE source = 'marketplace';
   `);
-  // Preserve all old reports and their foreign keys while adding the local mode.
-  const schema = TABLES_V2.slice(TABLES_V2.indexOf("CREATE TABLE reports ("))
-    .replace("CREATE TABLE reports (", "CREATE TABLE reports_v4 (")
-    .replace("('live', 'sample', 'simulated')", "('live', 'sample', 'simulated', 'local')");
-  db.exec(schema);
-  db.exec("INSERT INTO reports_v4 SELECT * FROM reports; DROP TABLE reports; ALTER TABLE reports_v4 RENAME TO reports;");
-  const insert = db.prepare(`INSERT INTO marketplace_listings VALUES (?, NULL, 'AI Workplace', 'company', ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`);
-  for (const profile of MARKETPLACE) insert.run(profile.id, profile.role, profile.specialty, profile.id === "procurement_researcher" ? "procurement_researcher" : "catalog_assistant", JSON.stringify(profile.skills), profile.hourlyRateCents!, JSON.stringify(profile.permissions), profile.id === "procurement_researcher" ? "supplier_lookup" : "catalog_search", now, profile.id);
+  // Existing hires keep the cast character they already showed.
+  const cast: Record<string, string> = { quality_inspector: "Inez", procurement_researcher: "Ro", catalog_assistant: "Kit" };
+  for (const [profileId, name] of Object.entries(cast)) {
+    db.prepare("UPDATE hires SET character_name = ?, sprite = ? WHERE profile_id = ?").run(name, JSON.stringify({ kind: "cast", id: profileId }), profileId);
+  }
 }
 
 /** Bring any database up to SCHEMA_VERSION, one version at a time. Exported for tests. */
@@ -219,7 +224,14 @@ export function migrate(db: Db, file: string, now = Date.now()) {
       migrateV2toV3(db);
       version = 3;
     }
-    if (version === 3) { migrateV3toV4(db, now); version = 4; }
+    if (version === 3) {
+      migrateV3toV4(db);
+      version = 4;
+    }
+    if (version === 4) {
+      migrateV4toV5(db);
+      version = 5;
+    }
     db.prepare("INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(
       DEFAULT_WORKSPACE_ID,
       DEFAULT_WORKSPACE_NAME,

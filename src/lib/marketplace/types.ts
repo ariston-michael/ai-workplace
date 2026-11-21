@@ -1,14 +1,4 @@
-import type { CharacterId } from "../workplace/characters.ts";
 export interface InventoryConfig { minimumQuantity: number; targetQuantity: number }
-export interface ListingDetails {
-  creatorName: string;
-  publisherKind: "company" | "community";
-  official: boolean;
-  avatarId: CharacterId;
-  supportedAction: "inventory_audit" | "supplier_lookup" | "catalog_search";
-  configuration: InventoryConfig | null;
-  createdAt: number;
-}
 export interface InventoryAuditResult {
   inputSha256: string;
   minimumQuantity: number;

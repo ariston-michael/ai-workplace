@@ -14,11 +14,14 @@ export class OfficeWalker {
   private generation = 0;
   private lastEvent: string | null;
   private lastJob: string | undefined;
+  /** Set when the worker is walking out for good; onGone fires at the door. */
+  private leavingOffice = false;
   private preference = window.matchMedia("(prefers-reduced-motion: reduce)");
   private finishForReducedMotion = () => { if (this.preference.matches && this.animation?.playState === "running") this.animation.finish(); };
 
-  constructor(private element: HTMLElement, private desk: string, private size: MapSize, movement: WorkerMovement, arriving: boolean) {
-    this.location = arriving ? "door" : movement.kind === "returned" || movement.kind === "failed" ? "reception" : "workstation";
+  constructor(private element: HTMLElement, private desk: string, private size: MapSize, movement: WorkerMovement, arriving: boolean, private onGone?: () => void) {
+    // On load a finished worker is already back at its desk (kept workers) or at reception.
+    this.location = arriving ? "door" : (movement.kind === "returned" || movement.kind === "failed") && movement.after === "leave" ? "reception" : "workstation";
     this.position = stopPoint(this.location, this.desk, size);
     this.lastEvent = movement.eventKey;
     this.lastJob = movement.jobId;
@@ -26,8 +29,14 @@ export class OfficeWalker {
     this.preference.addEventListener("change", this.finishForReducedMotion);
     if (arriving) {
       this.enqueue("workstation");
-      if (movement.kind === "returned" || movement.kind === "failed") this.enqueue("reception");
-    }
+      if (movement.kind === "returned" || movement.kind === "failed") { this.enqueue("reception"); this.afterReport(movement); }
+    } else if (movement.after === "leave") this.afterReport(movement);
+  }
+
+  /** After the report is at reception: back to the desk, or out through the door. */
+  private afterReport(movement: WorkerMovement) {
+    if (movement.after === "leave") { this.leavingOffice = true; this.enqueue("door"); }
+    else this.enqueue("workstation");
   }
 
   update(movement: WorkerMovement) {
@@ -44,7 +53,8 @@ export class OfficeWalker {
       // A short job may finish between polls. Its saved departure still precedes the return.
       if (newJob && movement.departed) this.enqueue("workstation");
       this.enqueue("reception");
-    }
+      this.afterReport(movement);
+    } else if (movement.after === "leave") this.afterReport(movement); // released while idle
   }
 
   resize(size: MapSize) {
@@ -108,6 +118,18 @@ export class OfficeWalker {
       }
       this.position = target; this.location = stop; this.active = null;
       this.place(); this.animation?.cancel(); this.animation = null;
+      if (stop === "door" && this.leavingOffice) {
+        this.element.dataset.gone = "true";
+        this.running = false;
+        this.onGone?.();
+        return;
+      }
+      // Hand the report over at reception before walking on.
+      if (stop === "reception" && this.queue.length && !this.preference.matches) {
+        this.element.dataset.travel = "handover";
+        await new Promise(resolve => setTimeout(resolve, 1400));
+        if (generation !== this.generation || this.disposed) return;
+      }
     }
     this.running = false;
   }

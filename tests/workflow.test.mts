@@ -44,7 +44,7 @@ test("workflow returns saved routing and fixture reports without recomputing the
     assert.equal(waiting.status, "needs_worker");
     assert.equal(waiting.report, null);
     assert.match(waiting.events.filter(event => event.actor === "Dispatcher").map(event => event.text).join(" "), /Recommending Procurement Researcher/);
-    const hire = approveHire(db, deps, DEFAULT_WORKSPACE_ID, { profileId: "procurement_researcher", jobId: request.jobId });
+    const hire = approveHire(db, deps, DEFAULT_WORKSPACE_ID, { profileId: "procurement_researcher", jobId: request.jobId, retention: "team" });
     assert.ok(hire.ok);
     await runJob(db, deps, request.jobId);
     assert.deepEqual(readSavedJobs(file, DEFAULT_WORKSPACE_ID, "auth0|alice")!, getState(db, DEFAULT_WORKSPACE_ID, "sample", deps.now())!.jobs);

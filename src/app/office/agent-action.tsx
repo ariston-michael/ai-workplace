@@ -7,8 +7,9 @@ export default function AgentAction({ hire, workspaceId, busy, onRun }: { hire: 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const requestId = useRef<string | null>(null);
-  if (hire.listing?.supportedAction !== "inventory_audit") return null;
-  const config = hire.listing.configuration!;
+  const config = hire.actionConfig;
+  // Only workers kept on the team take direct work; a job-only hire is busy with its one job.
+  if (!config || hire.retention !== "team") return null;
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (submitting || busy) return;

@@ -1,5 +1,3 @@
-import type { CharacterId } from "./characters.ts";
-import type { ListingDetails } from "../marketplace/types.ts";
 // Skills, job types and worker profiles for the AI Workplace.
 // Marketplace profiles are product data; a workspace *hire* (stored in SQLite)
 // snapshots the profile's role, skills and rate at hire time.
@@ -47,8 +45,6 @@ export const JOB_TYPES: Record<JobType, JobTypeInfo> = {
 
 export interface WorkerProfile {
   id: string;
-  avatarId?: CharacterId;
-  listing?: ListingDetails;
   role: string;
   initials: string;
   color: "coral" | "sage" | "gold" | "blue";
@@ -58,6 +54,8 @@ export interface WorkerProfile {
   hourlyRateCents: number | null;
   sampleWork: string;
   permissions: string[];
+  /** Marketplace listings only: official (verified) or community (published by a user). */
+  kind?: "official" | "community";
 }
 
 /** Workers available to hire. */

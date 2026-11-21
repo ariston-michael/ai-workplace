@@ -1,87 +1,389 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import PixelCharacter from "../office/pixel-character";
-import { CHARACTERS, type CharacterId } from "@/lib/workplace/characters";
-import { formatRate, SKILLS, type WorkerProfile } from "@/lib/workplace/catalog";
-import type { WorkspaceSummary } from "@/lib/workplace/types";
-import { INVENTORY_PERMISSIONS } from "@/lib/marketplace/types";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import PixelCharacter, { ListingBadge, VerifiedCheck } from "../office/pixel-character";
+import { SKILLS, formatRate, type SkillId } from "@/lib/workplace/catalog";
+import { PUBLISH_LIMITS, type MarketplaceListing, type PublishField } from "@/lib/workplace/marketplace";
+import {
+  ACCESSORIES, HAIR_COLORS, HAIR_STYLES, OUTFIT_COLORS, SKIN_TONES, spriteFromSeed,
+  type CustomSprite,
+} from "@/lib/workplace/sprites";
 import "./marketplace.css";
 
-export default function Marketplace() {
-  const [listings, setListings] = useState<WorkerProfile[]>([]);
-  const [offices, setOffices] = useState<WorkspaceSummary[]>([]);
-  const [office, setOffice] = useState("");
-  const [mine, setMine] = useState<string[]>([]);
-  const [viewer, setViewer] = useState("");
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("Loading listings…");
-  const [publishing, setPublishing] = useState(false);
-  const [avatar, setAvatar] = useState<CharacterId>("catalog_assistant");
-  const [revision, setRevision] = useState(0);
-  const requestId = useRef<string | null>(null);
+type Filter = "all" | "official" | "community";
+const FILTERS: { id: Filter; label: string }[] = [{ id: "all", label: "All" }, { id: "official", label: "Official" }, { id: "community", label: "Community" }];
 
+type HireTarget = { id: string; name: string; openDesks: number; hiredListingIds: string[] };
+type Data = { listings: MarketplaceListing[]; workspaces: HireTarget[]; viewer: { name: string | null; suggestedPublisherName: string } };
+
+// Module-level so they are never render-time side effects.
+const newRequestId = () => crypto.randomUUID();
+const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
+
+const isSkill = (s: string | null): s is SkillId => !!s && Object.hasOwn(SKILLS, s);
+
+export default function Marketplace() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const raw = params.get("filter");
+  const filter: Filter = raw === "official" || raw === "community" ? raw : "all";
+  const contextWs = params.get("workspace");
+  const jobId = params.get("job");
+  const skillParam = params.get("skill");
+  const skill = isSkill(skillParam) ? skillParam : null;
+
+  const [data, setData] = useState<Data | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [hiring, setHiring] = useState<MarketplaceListing | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([fetch("/api/marketplace", { cache: "no-store", signal: controller.signal }).then(r => r.json()), fetch("/api/workspaces", { cache: "no-store", signal: controller.signal }).then(r => r.json())]).then(([market, saved]) => {
-      if (controller.signal.aborted) return;
-      if (!market.ok || !saved.ok) throw new Error(market.error?.message ?? saved.error?.message ?? "Marketplace could not be loaded.");
-      setListings(market.listings); setMine(market.ownListingIds); setViewer(market.viewer.name);
-      setOffices(saved.workspaces); setOffice(current => current || saved.primaryWorkspaceId); setStatus(current => current === "Loading listings…" ? "" : current);
-    }).catch(failure => { if (!controller.signal.aborted) { setError(failure.message); setStatus(""); } });
+    fetch("/api/marketplace", { cache: "no-store", signal: controller.signal })
+      .then(async res => {
+        const body = await res.json();
+        if (!res.ok || !body.ok) throw new Error(body.error?.message ?? "The marketplace could not be loaded.");
+        setData(body); setError(null);
+      })
+      .catch(failure => {
+        if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "The marketplace could not be loaded.");
+      });
     return () => controller.abort();
   }, [revision]);
+  const load = () => setRevision(r => r + 1);
 
-  async function publish(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (publishing) return;
-    const form = event.currentTarget, data = new FormData(form);
-    requestId.current ??= crypto.randomUUID();
-    setPublishing(true); setError("");
-    try {
-      const response = await fetch("/api/marketplace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        clientRequestId: requestId.current, name: data.get("name"), description: data.get("description"), avatarId: avatar,
-        hourlyRateCents: Math.round(Number(data.get("rate")) * 100), skills: ["inventory_audit"], permissions: INVENTORY_PERMISSIONS,
-        action: { id: "inventory_audit", config: { minimumQuantity: Number(data.get("minimum")), targetQuantity: Number(data.get("target")) } },
-      }) });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error?.message ?? "Could not publish your agent.");
-      setStatus(`${result.profile.role} published as a community agent.`); setRevision(value => value + 1); requestId.current = null; form.reset();
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not publish your agent."); }
-    finally { setPublishing(false); }
+  function setFilter(next: Filter) {
+    const q = new URLSearchParams(params);
+    if (next === "all") q.delete("filter"); else q.set("filter", next);
+    router.replace(`${pathname}${q.size ? `?${q}` : ""}`, { scroll: false });
   }
 
-  return <main className="marketplace-page">
-    <header className="marketplace-header"><Link href="/" className="marketplace-brand">ai / AI Workplace</Link><nav><Link href="/">Workspaces</Link><a href="/auth/logout">Log out</a></nav></header>
-    <div className="marketplace-content">
-      <p className="marketplace-eyebrow">ROOM FOR YOUR NEXT TEAMMATE</p><h1>Agent marketplace</h1><p className="marketplace-intro">Hire a worker with a clear skill, price and supported action. Or publish one of your own.</p>
-      <details className="marketplace-publish"><summary>Publish an agent</summary>
-        <p>Published by {viewer || "your signed-in account"}. Community agents never carry the company’s official badge.</p>
-        <form onSubmit={publish} className="marketplace-form">
-          <div className="marketplace-avatarPicker"><PixelCharacter id={avatar} portrait /><label>Pixel avatar<select aria-label="Pixel avatar" value={avatar} onChange={event => setAvatar(event.target.value as CharacterId)}>{Object.entries(CHARACTERS).map(([id, character]) => <option value={id} key={id}>{character.detail}</option>)}</select></label></div>
-          <label>Agent name<input name="name" required maxLength={60} placeholder="e.g. Shelf Scout" /></label>
-          <label>Description<textarea name="description" required minLength={10} maxLength={500} rows={3} placeholder="Tell hirers what your worker does." /></label>
-          <label>Demo hourly rate ($)<input name="rate" type="number" min="0" max="1000" step="0.01" required defaultValue="5.00" /></label>
-          <label>Supported action<select aria-label="Supported action" name="action" defaultValue="inventory_audit"><option value="inventory_audit">Inventory CSV audit · real local execution</option></select></label>
-          <p className="marketplace-help">Calculates which SKUs are below your minimum, then recommends units to reach your restock target. The hirer supplies their own CSV. No fixture or external provider is used.</p>
-          <div className="marketplace-thresholds"><label>Low-stock minimum<input name="minimum" type="number" min="1" max="100000" step="1" defaultValue="5" required /></label><label>Restock target<input name="target" type="number" min="1" max="100000" step="1" defaultValue="10" required /></label></div>
-          <fieldset><legend>Supported skill</legend><label className="marketplace-check"><input type="checkbox" checked disabled readOnly /> Inventory audit</label></fieldset>
-          <fieldset><legend>Action permissions</legend><ul>{INVENTORY_PERMISSIONS.map(permission => <li key={permission}>{permission}</li>)}</ul><label className="marketplace-check"><input name="consent" type="checkbox" required /> Publish with these permissions</label></fieldset>
-          <p className="marketplace-help">Published listings are fixed for this milestone. Every hire saves its own copy of the price, avatar, permissions and action configuration. No actual payments are collected.</p>
-          <button type="submit" disabled={publishing}>{publishing ? "Publishing…" : "Publish community agent"}</button>
-        </form>
-      </details>
-      {error && <p className="marketplace-error" role="alert">{error}</p>}<p role="status">{status}</p>
-      <div className="marketplace-browseHeading"><h2>Meet the workers</h2><label>Hire into your office<select aria-label="Hire into your office" value={office} onChange={event => setOffice(event.target.value)}>{offices.map(ws => <option key={ws.id} value={ws.id}>{ws.name}</option>)}</select></label></div>
-      <div className="marketplace-grid">{listings.map(profile => <article key={profile.id} className="marketplace-card" data-listing-id={profile.id}>
-        <div className="marketplace-cardHeading"><PixelCharacter id={profile.avatarId ?? "catalog_assistant"} portrait /><div><span className={profile.listing?.official ? "marketplace-official" : "marketplace-community"}>{profile.listing?.official ? "✓ Official · AI Workplace" : "Community agent"}</span><h3>{profile.role}</h3><p>{formatRate(profile.hourlyRateCents)}</p></div></div>
-        <p>By {profile.listing?.creatorName}{mine.includes(profile.id) && " · Your listing"}</p><p>{profile.specialty}</p>
-        <ul className="marketplace-skills">{profile.skills.map(skill => <li key={skill}>{SKILLS[skill]}</li>)}</ul>
-        <p><strong>Action:</strong> {profile.listing?.supportedAction === "inventory_audit" ? "Inventory CSV audit · executed locally" : profile.listing?.supportedAction === "supplier_lookup" ? "Approved supplier lookup · sample or live" : "Internal catalog search · not runnable yet"}</p>
-        {profile.listing?.configuration && <p>Low stock below {profile.listing.configuration.minimumQuantity}; restock to {profile.listing.configuration.targetQuantity}.</p>}
-        <details><summary>Permissions</summary><ul>{profile.permissions.map(p => <li key={p}>{p}</li>)}</ul></details>
-        {office && <Link className="marketplace-hireLink" href={`/office?workspace=${encodeURIComponent(office)}&candidate=${encodeURIComponent(profile.id)}`}>Review hire in office ↗</Link>}
-      </article>)}</div>
+  const listings = data?.listings ?? [];
+  const counts = { all: listings.length, official: listings.filter(l => l.kind === "official").length, community: listings.filter(l => l.kind === "community").length };
+  const visible = listings
+    .filter(l => filter === "all" || l.kind === filter)
+    // With a skill in context, qualified workers come first (stable within each group).
+    .sort((a, b) => skill ? Number(b.skills.includes(skill)) - Number(a.skills.includes(skill)) : 0);
+  const contextOffice = data?.workspaces.find(w => w.id === contextWs);
+
+  function onPublished(listing: MarketplaceListing) {
+    setData(d => d && ({ ...d, listings: [...d.listings.filter(l => l.id !== listing.id), listing] }));
+    setPublishing(false);
+    setHighlight(listing.id);
+    setAnnouncement(`${listing.characterName} is published as a community listing.`);
+    if (filter === "official") setFilter("community");
+    requestAnimationFrame(() => document.querySelector(`[data-listing-id="${CSS.escape(listing.id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  }
+
+  return <main className="market-page">
+    <header className="market-header">
+      <Link href="/" className="market-brand"><span aria-hidden="true">ai</span> AI Workplace</Link>
+      <nav className="market-nav" aria-label="Main"><Link href="/">Workspaces</Link><span aria-current="page">Marketplace</span></nav>
+      {data?.viewer.name && <span className="market-viewer">Signed in as <strong>{data.viewer.name}</strong> · <a href="/auth/logout">Log out</a></span>}
+    </header>
+
+    <div className="market-content">
+      <div className="market-intro">
+        <div>
+          <p className="market-eyebrow">HIRE BY THE HOUR</p>
+          <h1>Marketplace</h1>
+          <p>Every worker here is an original pixel character. Hire one into an office and that exact character walks in through the entrance. Official workers carry the blue check; community agents are published by other users.</p>
+        </div>
+        <button type="button" className="market-primary" onClick={() => setPublishing(true)} disabled={!data}>Publish agent <span aria-hidden="true">+</span></button>
+      </div>
+
+      {data && (contextWs || skill) && <section className="market-context" aria-label="Hiring context">
+        {jobId && skill ? <p><strong>The Dispatcher is holding a job</strong> in {contextOffice?.name ?? "your office"} that needs <strong>{SKILLS[skill]}</strong>. Qualified workers are listed first. Hiring one resumes the job automatically.</p>
+          : contextWs ? <p>Hiring for <strong>{contextOffice?.name ?? "your office"}</strong>. You can pick another office in the next step.</p>
+          : skill ? <p>Showing workers with <strong>{SKILLS[skill]}</strong> first.</p> : null}
+        {contextWs && <Link className="market-secondary" href={`/office?workspace=${encodeURIComponent(contextWs)}`}>← Back to the office</Link>}
+      </section>}
+
+      <div className="market-toolbar">
+        <div className="market-filters" role="radiogroup" aria-label="Show listings">
+          {FILTERS.map(f => <button key={f.id} type="button" role="radio" aria-checked={filter === f.id} className="market-filter" onClick={() => setFilter(f.id)}>
+            {f.id === "official" && <VerifiedCheck label="" />}{f.label} <span className="market-count">{data ? counts[f.id] : "·"}</span>
+          </button>)}
+        </div>
+        <p className="market-note">Demo hourly rates, billed per second of run time and never charged.</p>
+      </div>
+
+      {error && <p className="market-error" role="alert">{error} <button type="button" className="market-secondary" onClick={load}>Try again</button></p>}
+      {!data && !error && <p className="market-status" role="status">Loading listings…</p>}
+      {data && filter === "community" && counts.community === 0 && <section className="market-empty">
+        <PixelCharacter sprite={spriteFromSeed(11)} portrait />
+        <h2>No community agents yet.</h2>
+        <p>Design a character, choose its skills and rate, and publish it for every signed-in user.</p>
+        <button type="button" className="market-primary" onClick={() => setPublishing(true)}>Publish the first agent</button>
+      </section>}
+
+      <ul className="market-grid">
+        {visible.map(l => {
+          const qualified = skill ? l.skills.includes(skill) : true;
+          return <li key={l.id} className="market-card" data-listing-id={l.id} data-kind={l.kind} data-highlight={highlight === l.id || undefined} data-qualified={skill ? qualified : undefined}>
+            <div className="market-cardArt"><PixelCharacter sprite={l.sprite} portrait stroll /></div>
+            <div className="market-cardBody">
+              <div className="market-cardTitle"><h2>{l.characterName}{l.verified && <VerifiedCheck />}</h2><span className="market-rate">{formatRate(l.hourlyRateCents).replace(" / hour", "")}<small>/hr</small></span></div>
+              <p className="market-role">{l.role}</p>
+              <ListingBadge kind={l.kind} publisher={l.publisher.isYou ? `${l.publisher.name} (you)` : l.publisher.name} />
+              <p className="market-specialty">{l.specialty}</p>
+              <blockquote className="market-greeting">“{l.greeting}”</blockquote>
+              {l.actionConfig && <p className="market-action"><strong>Action:</strong> Inventory CSV audit · executed locally · low stock below {l.actionConfig.minimumQuantity}, restock to {l.actionConfig.targetQuantity}</p>}
+              <ul className="market-skills" aria-label="Skills">{l.skills.map(s => <li key={s} data-match={s === skill || undefined}>{SKILLS[s]}{s === skill ? " ✓" : ""}</li>)}</ul>
+              <details className="market-more"><summary>Sample work and permissions</summary>
+                <p><strong>Sample work:</strong> {l.sampleWork}</p>
+                <p><strong>Permissions</strong> (set by the platform from the skills):</p>
+                <ul>{l.permissions.map(p => <li key={p}>{p}</li>)}</ul>
+              </details>
+              <button type="button" className="market-hire" disabled={!qualified && !!jobId} onClick={() => setHiring(l)}>
+                {!qualified && jobId ? `Lacks ${SKILLS[skill!]}` : `Hire ${l.characterName}`} <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </li>;
+        })}
+      </ul>
+      <p className="market-announcement" role="status">{announcement}</p>
+      <footer className="market-footer"><span>Built around the work. And the people directing it.</span><span>Community listings run on the platform’s tools for their skills.</span></footer>
     </div>
+
+    {hiring && data && <HireDialog listing={hiring} workspaces={data.workspaces} initial={contextWs} jobId={jobId && contextWs ? jobId : null} onClose={() => setHiring(null)} />}
+    {publishing && data && <PublishDialog suggestedPublisher={data.viewer.suggestedPublisherName} onClose={() => setPublishing(false)} onPublished={onPublished} />}
   </main>;
+}
+
+/** Native modal dialog: focus trap, Escape and backdrop come from the browser. */
+function useModal() {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => dialog?.close();
+  }, []);
+  return ref;
+}
+
+function HireDialog({ listing, workspaces, initial, jobId, onClose }: {
+  listing: MarketplaceListing; workspaces: HireTarget[]; initial: string | null; jobId: string | null; onClose: () => void;
+}) {
+  const router = useRouter();
+  const dialogRef = useModal();
+  const cancel = (e: React.SyntheticEvent) => { e.preventDefault(); onClose(); };
+  // A held job belongs to one office, so the picker is locked to it.
+  const choices = jobId ? workspaces.filter(w => w.id === initial) : workspaces;
+  const reason = (w: HireTarget) => w.hiredListingIds.includes(listing.id) ? "Already on this team" : w.openDesks === 0 ? "No open desk" : null;
+  const firstFree = choices.find(w => !reason(w))?.id ?? null;
+  const [choice, setChoice] = useState<string | null>(initial && choices.some(w => w.id === initial && !reason(w)) ? initial : firstFree);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // For a held job the default is "For this job"; hiring into an office without a job keeps the worker.
+  const [retention, setRetention] = useState<"job" | "team">(jobId ? "job" : "team");
+  const [instructions, setInstructions] = useState("");
+
+  async function hire(event: React.FormEvent) {
+    event.preventDefault();
+    if (!choice || submitting) return;
+    setSubmitting(true); setError(null);
+    try {
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(choice)}/hires`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: listing.id, jobId: jobId ?? undefined, retention, instructions: instructions.trim() || undefined }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.ok) { setError(body.error?.message ?? "The hire could not be saved."); setSubmitting(false); return; }
+      const q = new URLSearchParams({ workspace: choice });
+      if (body.created) q.set("arrived", body.hireId);
+      router.push(`/office?${q}`);
+    } catch {
+      setError("Could not reach the local workspace service. Try again.");
+      setSubmitting(false);
+    }
+  }
+
+  return <dialog ref={dialogRef} className="market-dialog" aria-labelledby="hire-title" onCancel={cancel}>
+    <form onSubmit={hire}>
+      <div className="market-dialogHead">
+        <PixelCharacter sprite={listing.sprite} portrait stroll />
+        <div><p className="market-eyebrow">HIRE INTO AN OFFICE</p><h2 id="hire-title">Hire {listing.characterName}{listing.verified && <VerifiedCheck />}</h2><p>{listing.role} · {formatRate(listing.hourlyRateCents)}</p><ListingBadge kind={listing.kind} publisher={listing.publisher.name} /></div>
+      </div>
+      <fieldset className="market-picker">
+        <legend>{jobId ? "The held job’s office" : "Choose a workspace"}</legend>
+        {choices.length === 0 && <p className="market-error">That office is not available. <Link href="/">Go to your workspaces</Link></p>}
+        {choices.map(w => {
+          const blocked = reason(w);
+          return <label key={w.id} className="market-pickerRow" data-blocked={blocked ? true : undefined}>
+            <input type="radio" name="workspace" value={w.id} checked={choice === w.id} disabled={!!blocked} onChange={() => setChoice(w.id)} />
+            <span><strong>{w.name}</strong><small>{blocked ?? `${w.openDesks} open ${w.openDesks === 1 ? "desk" : "desks"}`}</small></span>
+          </label>;
+        })}
+      </fieldset>
+      <fieldset className="market-picker">
+        <legend>How long should {listing.characterName} stay?</legend>
+        {jobId && <label className="market-pickerRow"><input type="radio" name="retention" checked={retention === "job"} onChange={() => setRetention("job")} />
+          <span><strong>For this job</strong><small>Brings the report to reception, then leaves. The report stays in workflow history.</small></span></label>}
+        <label className="market-pickerRow"><input type="radio" name="retention" checked={retention === "team"} onChange={() => setRetention("team")} />
+          <span><strong>Keep on team</strong><small>Returns to its desk after each report. Later jobs needing its skills go to it first.</small></span></label>
+      </fieldset>
+      <label className="market-field">Instructions for {listing.characterName} (optional, saved with this hire)
+        <textarea rows={2} maxLength={1000} value={instructions} onChange={e => setInstructions(e.target.value)} placeholder="Added to each job brief for this worker." />
+      </label>
+      {listing.kind === "community" && <p className="market-fine">Community listing by {listing.publisher.name}. It is not verified by AI Workplace and runs on the platform’s tools for its skills, with the permissions listed on the card.</p>}
+      <p className="market-fine">{listing.characterName} walks in through the entrance to the first open desk. The hire, its rate, instructions and this character are saved with the office.</p>
+      {error && <p className="market-error" role="alert">{error}</p>}
+      <div className="market-dialogActions">
+        <button type="button" className="market-secondary" onClick={onClose}>Cancel</button>
+        <button type="submit" className="market-primary" disabled={!choice || submitting}>{submitting ? "Hiring…" : choice ? `Hire into ${workspaces.find(w => w.id === choice)?.name}` : "No office has room"}</button>
+      </div>
+    </form>
+  </dialog>;
+}
+
+type Draft = { characterName: string; role: string; specialty: string; greeting: string; skills: SkillId[]; rate: string; sampleWork: string; publisherName: string; sprite: CustomSprite; minimum: string; target: string };
+
+const PART_LABEL: Record<string, string> = {
+  crop: "Crop", long: "Long", bun: "Bun", curls: "Curls", cap: "Cap", beanie: "Beanie", shaved: "Shaved",
+  none: "None", glasses: "Glasses", satchel: "Satchel", tablet: "Tablet", toolbelt: "Tool belt", badge: "Badge",
+};
+const title = (k: string) => k[0].toUpperCase() + k.slice(1);
+
+function PublishDialog({ suggestedPublisher, onClose, onPublished }: { suggestedPublisher: string; onClose: () => void; onPublished: (l: MarketplaceListing) => void }) {
+  const dialogRef = useModal();
+  const cancel = (e: React.SyntheticEvent) => { e.preventDefault(); onClose(); };
+  const [draft, setDraft] = useState<Draft>(() => ({
+    characterName: "", role: "", specialty: "", greeting: "", skills: [], rate: "5.00", sampleWork: "", minimum: "5", target: "12",
+    publisherName: suggestedPublisher, sprite: spriteFromSeed(7),
+  }));
+  const [errors, setErrors] = useState<Partial<Record<PublishField, string>>>({});
+  const [failure, setFailure] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // One id per dialog, so a double submit cannot publish twice.
+  const requestId = useRef<string | null>(null);
+
+  // Editing a field clears its error; the server re-checks everything on submit.
+  const clearError = (key: PublishField) => setErrors(e => { if (!e[key]) return e; const next = { ...e }; delete next[key]; return next; });
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    setDraft(d => ({ ...d, [key]: value }));
+    clearError(key === "rate" ? "hourlyRateCents" : key === "minimum" || key === "target" ? "actionConfig" : key);
+  };
+  const setPart = <K extends keyof CustomSprite>(key: K, value: CustomSprite[K]) => { setDraft(d => ({ ...d, sprite: { ...d.sprite, [key]: value } })); clearError("sprite"); };
+  const L = PUBLISH_LIMITS;
+
+  async function publish(event: React.FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true); setFailure(null);
+    requestId.current ??= newRequestId();
+    const { rate, minimum, target, ...rest } = draft;
+    const actionConfig = draft.skills.includes("inventory_audit") ? { minimumQuantity: Number(minimum), targetQuantity: Number(target) } : undefined;
+    const cents = Math.round(Number(rate) * 100);
+    try {
+      const res = await fetch("/api/marketplace/listings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientRequestId: requestId.current, listing: { ...rest, actionConfig, hourlyRateCents: Number.isFinite(cents) ? cents : null } }),
+      });
+      const body = await res.json();
+      setSubmitting(false);
+      if (!res.ok || !body.ok) {
+        setErrors(body.error?.fields ?? {});
+        setFailure(body.error?.message ?? "The listing could not be published.");
+        // Field errors mean nothing was saved; let a corrected submit use a new id.
+        if (body.error?.fields) requestId.current = null;
+        return;
+      }
+      onPublished(body.listing);
+    } catch {
+      setSubmitting(false);
+      setFailure("Could not reach the local marketplace service. Try again.");
+    }
+  }
+
+  const field = (key: Exclude<PublishField, "skills" | "sprite" | "hourlyRateCents" | "actionConfig">, label: string, opts: { multiline?: boolean; placeholder: string; max: number }) => {
+    const id = `publish-${key}`;
+    const Input = opts.multiline ? "textarea" : "input";
+    return <label className="market-field" htmlFor={id}>
+      <span>{label}</span>
+      <Input id={id} name={key} value={draft[key]} maxLength={opts.max} placeholder={opts.placeholder} rows={opts.multiline ? 2 : undefined}
+        aria-invalid={errors[key] ? true : undefined} aria-describedby={errors[key] ? `${id}-error` : undefined}
+        onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value)} />
+      {errors[key] && <small id={`${id}-error`} className="market-fieldError">{errors[key]}</small>}
+    </label>;
+  };
+
+  const swatches = <K extends "skin" | "outfit" | "trim" | "hairColor">(key: K, label: string, table: Record<string, string>) =>
+    <fieldset className="market-parts"><legend>{label}</legend><div className="market-swatches">
+      {Object.entries(table).map(([name, hex]) => <label key={name} className="market-swatch" title={title(name)}>
+        <input type="radio" name={`sprite-${key}`} value={name} checked={draft.sprite[key] === name} onChange={() => setPart(key, name as CustomSprite[K])} />
+        <span style={{ background: hex }} aria-hidden="true" /><span className="market-visuallyHidden">{title(name)}</span>
+      </label>)}
+    </div></fieldset>;
+
+  const choices = <K extends "hair" | "accessory">(key: K, label: string, list: readonly string[]) =>
+    <fieldset className="market-parts"><legend>{label}</legend><div className="market-chips">
+      {list.map(name => <label key={name} className="market-chip">
+        <input type="radio" name={`sprite-${key}`} value={name} checked={draft.sprite[key] === name} onChange={() => setPart(key, name as CustomSprite[K])} />
+        <span>{PART_LABEL[name]}</span>
+      </label>)}
+    </div></fieldset>;
+
+  return <dialog ref={dialogRef} className="market-dialog market-publish" aria-labelledby="publish-title" onCancel={cancel}>
+    <form onSubmit={publish} noValidate>
+      <div className="market-dialogHead"><div><p className="market-eyebrow">COMMUNITY LISTING</p><h2 id="publish-title">Publish an agent</h2><p>Your agent appears under Community for every signed-in user. Permissions come from the skills you choose; it cannot be given more.</p></div></div>
+      <div className="market-publishGrid">
+        <section className="market-builder" aria-labelledby="builder-title">
+          <h3 id="builder-title">Character sprite</h3>
+          <div className="market-preview" aria-label="Sprite preview: facing south, north, east and west" role="img">
+            {(["south", "east", "north", "west"] as const).map(f => <PixelCharacter key={f} sprite={draft.sprite} facing={f} stroll />)}
+          </div>
+          <button type="button" className="market-secondary" onClick={() => set("sprite", spriteFromSeed(randomSeed()))}>Shuffle parts</button>
+          {swatches("skin", "Skin", SKIN_TONES)}
+          {swatches("outfit", "Outfit", OUTFIT_COLORS)}
+          {swatches("trim", "Trim", OUTFIT_COLORS)}
+          {choices("hair", "Hair", HAIR_STYLES)}
+          {swatches("hairColor", "Hair colour", HAIR_COLORS)}
+          {choices("accessory", "Accessory", ACCESSORIES)}
+          {errors.sprite && <small className="market-fieldError">{errors.sprite}</small>}
+        </section>
+        <section className="market-fields" aria-label="Listing details">
+          {field("characterName", "Character name", { placeholder: "e.g. Juno", max: L.characterName[1] })}
+          {field("role", "Role", { placeholder: "e.g. Parts Scout", max: L.role[1] })}
+          {field("specialty", "Specialty", { placeholder: "What this agent is good at", max: L.specialty[1], multiline: true })}
+          {field("greeting", "Greeting", { placeholder: "A line your character says at its desk", max: L.greeting[1] })}
+          <fieldset className="market-parts" aria-invalid={errors.skills ? true : undefined} aria-describedby={errors.skills ? "publish-skills-error" : undefined}>
+            <legend>Skills (1–{L.maxSkills})</legend>
+            <div className="market-chips">{(Object.keys(SKILLS) as SkillId[]).map(s => <label key={s} className="market-chip">
+              <input type="checkbox" name="skills" value={s} checked={draft.skills.includes(s)}
+                onChange={e => set("skills", e.target.checked ? [...draft.skills, s] : draft.skills.filter(x => x !== s))} />
+              <span>{SKILLS[s]}</span>
+            </label>)}</div>
+            {errors.skills && <small id="publish-skills-error" className="market-fieldError">{errors.skills}</small>}
+          </fieldset>
+          {draft.skills.includes("inventory_audit") && <fieldset className="market-parts market-thresholds" aria-describedby={errors.actionConfig ? "publish-config-error" : "publish-config-help"}>
+            <legend>Inventory audit action</legend>
+            <p id="publish-config-help" className="market-fine">Hirers submit a CSV (sku,quantity). Rows below the minimum are flagged and restocked up to the target. Runs locally; you never see hirers’ inventory or reports.</p>
+            <label className="market-field">Low-stock minimum<input type="number" min={1} max={100000} step={1} value={draft.minimum} aria-invalid={errors.actionConfig ? true : undefined} onChange={e => set("minimum", e.target.value)} /></label>
+            <label className="market-field">Restock target<input type="number" min={1} max={100000} step={1} value={draft.target} aria-invalid={errors.actionConfig ? true : undefined} onChange={e => set("target", e.target.value)} /></label>
+            {errors.actionConfig && <small id="publish-config-error" className="market-fieldError">{errors.actionConfig}</small>}
+          </fieldset>}
+          <label className="market-field" htmlFor="publish-rate">
+            <span>Hourly rate (USD, ${L.rateCents[0] / 100}–${L.rateCents[1] / 100})</span>
+            <input id="publish-rate" name="rate" type="number" inputMode="decimal" min={L.rateCents[0] / 100} max={L.rateCents[1] / 100} step="0.5" value={draft.rate}
+              aria-invalid={errors.hourlyRateCents ? true : undefined} aria-describedby={errors.hourlyRateCents ? "publish-rate-error" : undefined} onChange={e => set("rate", e.target.value)} />
+            {errors.hourlyRateCents && <small id="publish-rate-error" className="market-fieldError">{errors.hourlyRateCents}</small>}
+          </label>
+          {field("sampleWork", "Sample work", { placeholder: "A short example of what it delivers", max: L.sampleWork[1], multiline: true })}
+          {field("publisherName", "Publisher name (shown on the listing)", { placeholder: "Your name or team", max: L.publisherName[1] })}
+        </section>
+      </div>
+      {failure && <p className="market-error" role="alert">{failure}</p>}
+      <div className="market-dialogActions">
+        <button type="button" className="market-secondary" onClick={onClose}>Cancel</button>
+        <button type="submit" className="market-primary" disabled={submitting}>{submitting ? "Publishing…" : "Publish to Community"}</button>
+      </div>
+    </form>
+  </dialog>;
 }

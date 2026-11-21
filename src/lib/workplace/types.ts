@@ -1,9 +1,12 @@
-import type { InventoryAuditResult } from "../marketplace/types.ts";
 // Shapes returned by /api/workplace and rendered by /office.
 
+import type { InventoryAuditResult } from "../marketplace/types.ts";
 import type { JobType, SkillId, WorkerProfile } from "./catalog.ts";
+import type { InventoryConfig } from "../marketplace/types.ts";
 import type { LookupMode, LookupResult } from "../procurement.ts";
 import type { Incident } from "../camera-incident.ts";
+import type { MarketplaceListing } from "./marketplace.ts";
+import type { SpriteSpec } from "./sprites.ts";
 
 export type JobStatus = "needs_worker" | "queued" | "working" | "completed" | "failed";
 export type ReportMode = "live" | "sample" | "simulated" | "local";
@@ -24,12 +27,19 @@ export type ReportBody =
       simulatorFault?: string;
     };
 
+export type Retention = "team" | "job";
+
+export interface HireEventView {
+  at: number;
+  kind: string;
+  text: string;
+  jobId: string | null;
+}
+
 export interface HireView {
   id: string;
   profileId: string;
-  avatarId?: WorkerProfile["avatarId"];
-  listing?: WorkerProfile["listing"];
-  permissions?: string[];
+  permissions: string[];
   role: string;
   initials: string;
   color: WorkerProfile["color"];
@@ -41,6 +51,29 @@ export interface HireView {
   hiredAt: number;
   activeJobId: string | null;
   completedJobs: number;
+  /** Snapshot from the listing at hire time: the same character the marketplace showed. */
+  characterName: string;
+  sprite: SpriteSpec;
+  /** null for built-in staff. */
+  listingKind: "official" | "community" | null;
+  publisherName: string | null;
+  greeting: string;
+  actionConfig: InventoryConfig | null;
+  /** "team" = kept on team (reused for later jobs). "job" = leaves after `jobId`'s report. */
+  retention: Retention;
+  /** The job this worker was hired for, if any. */
+  jobId: string | null;
+  instructions: string;
+  /** Set once the worker has left the office. Its jobs and reports stay in history. */
+  departedAt: number | null;
+  /** Newest last. Saved in this workspace only. */
+  history: HireEventView[];
+}
+
+export interface DispatcherInfo {
+  /** "gemini" when GEMINI_API_KEY is set; otherwise the built-in keyword rules. */
+  engine: "gemini" | "rules";
+  model: string | null;
 }
 
 export interface ReportView {
@@ -70,6 +103,8 @@ export interface JobView {
   status: JobStatus;
   hireId: string | null;
   hireRole: string | null;
+  /** Character name from the hire's snapshot, kept after the worker leaves. */
+  hireName: string | null;
   recommendedProfileId: string | null;
   createdAt: number;
   assignedAt: number | null;
@@ -93,9 +128,13 @@ export interface WorkplaceState {
   workspaceId: string;
   workspace: { id: string; name: string };
   procurementMode: LookupMode;
+  /** Workers in the office now. */
   team: HireView[];
+  /** Workers who left (job-only or released), newest first, max 20. Their jobs and reports remain. */
+  formerHires: HireView[];
+  dispatcher: DispatcherInfo;
   jobs: JobView[];
-  marketplace: (WorkerProfile & { hired: boolean })[];
+  marketplace: (MarketplaceListing & { hired: boolean })[];
   simulator: { cameraFault: string };
 }
 

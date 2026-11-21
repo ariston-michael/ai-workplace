@@ -6,7 +6,6 @@ import { MAP_WIDTH, MAP_HEIGHT, MAP_STATIONS, MAP_DECOR, RECEPTION, type Rect, t
 import { workerMovement } from "@/lib/workplace/movement";
 import type { HireView, JobView } from "@/lib/workplace/types";
 import PixelCharacter from "./pixel-character";
-import { CHARACTERS, characterId } from "@/lib/workplace/characters";
 import { OfficeWalker } from "./office-walker";
 import "./office-map.css";
 
@@ -26,34 +25,37 @@ function Desk({ desk, chair, role, label, status, color, selected, onClick }: {
   </button>;
 }
 
-function Worker({ hire, jobs, size, arriving, selected, onClick }: {
-  hire: HireView; jobs: JobView[]; size: MapSize; arriving: boolean; selected: boolean; onClick: (jobId?: string) => void;
+function Worker({ hire, jobs, size, arriving, selected, onClick, onGone }: {
+  hire: HireView; jobs: JobView[]; size: MapSize; arriving: boolean; selected: boolean; onClick: (jobId?: string) => void; onGone: () => void;
 }) {
   const movement = workerMovement(hire, jobs);
   const button = useRef<HTMLButtonElement>(null);
   const walker = useRef<OfficeWalker | null>(null);
   // This snapshot is used only for initial placement: old events never replay on reload.
   const [initial] = useState(() => ({ desk: hire.desk, size, movement, arriving }));
+  const gone = useRef(onGone);
+  useLayoutEffect(() => { gone.current = onGone; });
   useLayoutEffect(() => {
     if (!button.current) return;
-    walker.current = new OfficeWalker(button.current, initial.desk, initial.size, initial.movement, initial.arriving);
+    walker.current = new OfficeWalker(button.current, initial.desk, initial.size, initial.movement, initial.arriving, () => gone.current());
     return () => { walker.current?.dispose(); walker.current = null; };
   }, [initial]);
   useLayoutEffect(() => { walker.current?.resize(size); }, [size]);
   useEffect(() => { walker.current?.update(movement); }, [movement]);
   const report = movement.kind === "returned";
-  const label = report ? "Report ready. Read saved report" : movement.kind === "failed" ? "Returned with an error. View outcome" : movement.kind === "working" ? "Working on a job" : movement.kind === "assigned" ? "Assigned to workstation" : "View worker";
-  return <button ref={button} type="button" className="office-mapWalker" data-worker-id={hire.id} data-desk={hire.desk} data-movement={movement.kind}
-    aria-label={`${hire.role}: ${label} · ${hire.listing?.publisherKind === "community" ? hire.role : CHARACTERS[characterId(hire.profileId)].name}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
-    <PixelCharacter key={movement.eventKey} id={hire.avatarId ?? characterId(hire.profileId)} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
+  const leaving = movement.after === "leave";
+  const label = leaving ? "Leaving the office (hired for one job). Read saved report" : report ? "Report ready. Read saved report" : movement.kind === "failed" ? "Returned with an error. View outcome" : movement.kind === "working" ? "Working on a job" : movement.kind === "assigned" ? "Assigned to workstation" : "View worker";
+  return <button ref={button} type="button" className="office-mapWalker" data-worker-id={hire.id} data-desk={hire.desk} data-movement={movement.kind} data-after={movement.after} data-retention={hire.retention}
+    aria-label={`${hire.role}: ${label} · ${hire.characterName}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
+    <PixelCharacter key={movement.eventKey} sprite={hire.sprite} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
     {report && <span className="office-mapReportBadge" aria-hidden="true">▤</span>}
     {movement.kind === "failed" && <span className="office-mapReportBadge" aria-hidden="true">!</span>}
     <span className="office-mapWorkerLabel">{hire.role}{report ? " · Report ready" : ""}</span>
   </button>;
 }
 
-export default function OfficeMap({ team, jobs, loaded, arrivals, selectedHire, selectedDesk, dispatcherSelected, onWorker, onDesk, onDispatcher }: {
-  team: HireView[]; jobs: JobView[]; loaded: boolean; arrivals: Set<string>; selectedHire?: string; selectedDesk?: string; dispatcherSelected: boolean;
+export default function OfficeMap({ team, leaving, onGone, jobs, loaded, arrivals, selectedHire, selectedDesk, dispatcherSelected, onWorker, onDesk, onDispatcher }: {
+  team: HireView[]; leaving: HireView[]; onGone: (hireId: string) => void; jobs: JobView[]; loaded: boolean; arrivals: Set<string>; selectedHire?: string; selectedDesk?: string; dispatcherSelected: boolean;
   onWorker: (hireId: string, jobId?: string) => void; onDesk: (desk: string) => void; onDispatcher: () => void;
 }) {
   const floor = useRef<HTMLDivElement>(null);
@@ -77,14 +79,14 @@ export default function OfficeMap({ team, jobs, loaded, arrivals, selectedHire, 
     {MAP_STATIONS.map(station => {
       const hire = team.find(item => item.desk === station.id);
       const movement = hire ? workerMovement(hire, jobs) : null;
-      const status = movement?.kind === "returned" ? "Report at reception" : movement?.kind === "working" ? "Working" : movement?.kind === "assigned" ? "Assigned" : undefined;
+      const status = movement?.kind === "returned" ? (movement.after === "desk" ? "Ready · report saved" : "Report at reception") : movement?.kind === "working" ? "Working" : movement?.kind === "assigned" ? "Assigned" : undefined;
       return <Desk key={station.id} desk={station.desk} chair={station.chair} label={station.label} role={hire?.role} status={status}
         selected={hire ? selectedHire === hire.id : selectedDesk === station.id} onClick={() => hire ? onWorker(hire.id) : onDesk(station.id)} />;
     })}
     <Desk desk={RECEPTION.desk} chair={RECEPTION.chair} role={DISPATCHER.role} label="Reception" status="Entrance" color={DISPATCHER.color} selected={dispatcherSelected} onClick={onDispatcher} />
     <span className="office-mapReceptionLabel">RECEPTION</span>
     <span className="office-mapDoor" aria-hidden="true" /><span className="office-mapEntranceLabel">ENTRANCE ↑</span>
-    {loaded && size && team.map(hire => <Worker key={hire.id} hire={hire} jobs={jobs} size={size} arriving={arrivals.has(hire.id)} selected={selectedHire === hire.id}
-      onClick={jobId => onWorker(hire.id, jobId)} />)}
+    {loaded && size && [...team, ...leaving.filter(l => !team.some(t => t.id === l.id))].map(hire => <Worker key={hire.id} hire={hire} jobs={jobs} size={size} arriving={arrivals.has(hire.id)} selected={selectedHire === hire.id}
+      onClick={jobId => onWorker(hire.id, jobId)} onGone={() => onGone(hire.id)} />)}
   </div>;
 }

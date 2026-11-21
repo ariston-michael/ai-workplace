@@ -19,7 +19,7 @@ test("worker movement follows saved departure and return events; saved assignmen
   try {
     const submitted = submitJob(db, deps, DEFAULT_WORKSPACE_ID, { clientRequestId: "movement-request-001", type: "supplier_lookup", input: { partName: "Raspberry Pi 5 4GB", supplierId: "adafruit" } });
     assert.ok(submitted.ok);
-    const hired = approveHire(db, deps, DEFAULT_WORKSPACE_ID, { profileId: "procurement_researcher", jobId: submitted.jobId });
+    const hired = approveHire(db, deps, DEFAULT_WORKSPACE_ID, { profileId: "procurement_researcher", jobId: submitted.jobId, retention: "team" });
     assert.ok(hired.ok);
     let state = getState(db, DEFAULT_WORKSPACE_ID, "sample", clock)!;
     let hire = state.team.find(item => item.id === hired.hireId)!;
