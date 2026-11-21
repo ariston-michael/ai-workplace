@@ -29,6 +29,8 @@ test("worker movement follows saved departure and return events; queueing alone 
     hire = state.team.find(item => item.id === hired.hireId)!;
     assert.equal(state.jobs[0].status, "working");
     assert.equal(workerMovement(hire, state.jobs).kind, "working");
+    const queued = { ...state.jobs[0], id: "later-queued", status: "queued" as const, events: [] };
+    assert.equal(workerMovement({ ...hire, activeJobId: queued.id }, [queued, ...state.jobs]).kind, "working");
     assert.equal(workerMovement(hire, state.jobs.map(job => ({ ...job, events: [] }))).kind, "at_desk");
     const { findSupplier } = await import("../src/lib/procurement.ts");
     finish(await lookupPart("Raspberry Pi 5 4GB", findSupplier("adafruit")!, "sample"));

@@ -2,7 +2,9 @@ import type { HireView, JobView } from "./types.ts";
 
 /** Physical movement requires a saved worker event, not a random timer. */
 export function workerMovement(hire: HireView, jobs: JobView[]) {
-  const job = jobs.find(item => item.id === hire.activeJobId) ?? jobs.find(item => item.hireId === hire.id);
+  const ownJobs = jobs.filter(item => item.hireId === hire.id);
+  const job = ownJobs.find(item => item.status === "working")
+    ?? ownJobs.find(item => item.id === hire.activeJobId) ?? ownJobs[0];
   const event = job?.events.filter(item => item.actor === hire.role).at(-1);
   const eventKey = job && event ? `${job.id}:${event.at}:${event.text}` : null;
   if (job?.status === "working" && event?.text === "Left the desk to start work.") {

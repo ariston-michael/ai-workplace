@@ -50,7 +50,7 @@ export default function WorkspaceDashboard({ workspaces, loading, error, onRefre
     <div className="workspaces-content">
       <div className="workspaces-intro"><div><p className="workspaces-eyebrow">A HOME FOR YOUR TEAMS</p><h1>Workspaces</h1><p>A little space for each team. Step into an office, meet your workers, and pick up where the work left off.</p></div><button className="workspaces-primary" type="button" aria-expanded={creating} aria-controls="workspace-create" onClick={() => { setCreating(value => !value); setCreateError(null); }}>+ New workspace</button></div>
       {creating && <form id="workspace-create" className="workspaces-createForm" onSubmit={create}>
-        <label htmlFor="workspace-name">Workspace name<input id="workspace-name" name="name" required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="Name your workspace" /></label>
+        <label htmlFor="workspace-name">Workspace name<input id="workspace-name" name="name" required maxLength={60} value={name} onChange={event => setName(event.target.value)} placeholder="Name your workspace" /></label>
         <button className="workspaces-primary" type="submit" disabled={submitting || !name.trim()}>{submitting ? "Creating…" : "Create workspace"}</button>
         <button className="workspaces-secondary" type="button" onClick={() => setCreating(false)}>Cancel</button>
         {createError && <p className="workspaces-error" role="alert">{createError}</p>}
