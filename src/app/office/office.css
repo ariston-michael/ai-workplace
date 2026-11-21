@@ -281,3 +281,7 @@
 
 .office-requestDock { padding: 0 25px 24px; }
 .office-requestDock .office-jobForm { margin-top: 0; }
+
+.office-door { bottom: 0; height: 10px; }
+.office-office .office-entry { left: 18%; bottom: 14px; }
+.office-reception .office-smallAvatar { animation: none; }

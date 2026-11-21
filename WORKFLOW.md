@@ -1,7 +1,7 @@
 # Read-only workflow history
 
-Branch `workflow-history` starts at pushed `workplace-core` commit `8144b9b`.
-The new `/workflow` page lists the latest 50 saved jobs. Select a job to review
+The original `workflow-history` branch starts at `8144b9b`. The dashboard integration merges the workspace API from `workplace-core` commit `51c3ceb`.
+The `/workflow?workspace=<id>&job=<id>` page lists the latest 50 saved jobs for the selected workspace and selects the linked job. The default workspace is `default`. Select a job to review
 its structured request, exact saved Dispatcher events, worker evidence, saved
 outcome and full job history. Refresh reloads the saved snapshot.
 
@@ -29,7 +29,7 @@ worktree read the jobs saved by the original office. Change it to your existing
 SQLite file as needed; without it, the default is `./data/workplace.db`.
 
 Submit jobs in Claude's office, then refresh this page to review them. No form,
-hiring action or reset control is added to `/workflow`; `/office` is unchanged.
+hiring action or reset control is added to `/workflow`. The integrated office layout is documented in `WORKSPACES.md`; Claude’s intake behavior is preserved.
 
 ## Verification
 

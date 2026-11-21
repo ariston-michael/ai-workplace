@@ -271,7 +271,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
               <Station worker={DISPATCHER} station="office-reception" label="Reception" status={state?.jobs.some(j => j.status === "needs_worker") ? "Waiting for your hire approval" : undefined}
                 selected={selection === "dispatcher" || selection === null} onClick={() => select("dispatcher")} />
               <span className="office-door" aria-hidden="true" />
-              <span className="office-entry" aria-hidden="true">WELCOME IN ↑</span>
+              <span className="office-entry" aria-hidden="true">ENTRANCE ↑</span>
             </div>
             <div className="office-floorFooter"><span aria-hidden="true">↖</span> Select a desk to meet a worker or an empty desk to open the marketplace.</div>
           </section>
