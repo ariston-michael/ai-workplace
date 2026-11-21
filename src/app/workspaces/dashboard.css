@@ -71,3 +71,8 @@
 .workspaces-header { flex-wrap: wrap; height: auto; min-height: 84px; gap: 14px; padding-top: 18px; padding-bottom: 18px; }
 .workspaces-viewer { font-size: 12px; color: #566659; }
 .workspaces-viewer a { text-decoration: underline; text-underline-offset: 3px; }
+.workspaces-nav { display: flex; align-items: center; gap: 14px; }
+.workspaces-navLink { color: var(--ws-ink); font-size: 12px; font-weight: 600; text-decoration: none; padding: 8px 12px; border-radius: 24px; border: 1px solid transparent; }
+.workspaces-navLink:hover { border-color: #cdd5c3; }
+.workspaces-marketCta { text-decoration: none; white-space: nowrap; }
+.workspaces-introActions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }

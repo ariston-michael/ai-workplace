@@ -4,7 +4,7 @@ import { auth0 } from "./lib/auth0";
 // Pages that need a signed-in user. API routes enforce sign-in and workspace
 // ownership themselves (src/lib/workplace/runtime.server.ts), so they are not
 // redirected here; they answer 401 instead.
-const PROTECTED_PAGES = ["/", "/office", "/workflow", "/procurement"];
+const PROTECTED_PAGES = ["/", "/office", "/workflow", "/procurement", "/marketplace"];
 
 export async function proxy(request: NextRequest) {
   const authResponse = await auth0.middleware(request);

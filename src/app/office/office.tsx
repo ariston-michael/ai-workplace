@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import OfficeMap from "./office-map";
-import PixelCharacter from "./pixel-character";
-import { CHARACTERS, characterId, characterVoice, characterTask } from "@/lib/workplace/characters";
+import PixelCharacter, { ListingBadge } from "./pixel-character";
+import { CHARACTERS, characterVoice, characterTask } from "@/lib/workplace/characters";
+import type { MarketplaceListing } from "@/lib/workplace/marketplace";
+import type { SpriteSpec } from "@/lib/workplace/sprites";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import "./office.css";
 import { CameraIncidentReport } from "./repair-incident";
@@ -15,7 +17,6 @@ import {
   SKILLS,
   formatCost,
   formatRate,
-  type WorkerProfile,
 } from "@/lib/workplace/catalog";
 import type { HireView, JobStatus, JobView, ReportMode, WorkplaceState, WorkspaceSummary } from "@/lib/workplace/types";
 
@@ -42,11 +43,23 @@ function newRequestId() {
   return crypto.randomUUID();
 }
 
-type AvatarLike = { initials: string; color: string; id?: string; profileId?: string };
-
-function Avatar({ worker, small = false, away = false }: { worker: AvatarLike; small?: boolean; away?: boolean }) {
-  return <span aria-hidden="true" className={`office-avatar office-${worker.color} ${small ? "office-smallAvatar" : ""} ${away ? "office-away" : ""}`}><PixelCharacter id={characterId(worker.profileId ?? worker.id ?? (worker.initials === "DI" ? "dispatcher" : "catalog_assistant"))} /></span>;
+function Avatar({ worker, small = false, away = false }: { worker: { color: string; sprite: SpriteSpec }; small?: boolean; away?: boolean }) {
+  return <span aria-hidden="true" className={`office-avatar office-${worker.color} ${small ? "office-smallAvatar" : ""} ${away ? "office-away" : ""}`}><PixelCharacter sprite={worker.sprite} /></span>;
 }
+
+
+/** Community characters borrow the line set of their main skill; idle, they use their own greeting. */
+function workerVoice(hire: HireView, job: JobView | undefined, greeting: string | undefined): string {
+  if (hire.sprite.kind === "cast") return characterVoice(hire.sprite.id, job);
+  const like = hire.skills.includes("supplier_research") ? "procurement_researcher" : hire.skills.includes("camera_diagnostics") ? "quality_inspector" : "catalog_assistant";
+  const line = characterVoice(like, job);
+  return line === CHARACTERS[like].voice ? greeting ?? hire.specialty : line;
+}
+
+const marketplaceHref = (params: Record<string, string | undefined>) => {
+  const q = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => !!e[1]));
+  return `/marketplace${q.size ? `?${q}` : ""}`;
+};
 
 function ModeBadge({ mode }: { mode: ReportMode }) {
   const text = mode === "live" ? "LIVE" : mode === "sample" ? "SAMPLE · fixture" : "SIMULATED";
@@ -69,7 +82,8 @@ async function api(path: string, body?: unknown): Promise<{ ok: true; state: Wor
 export default function Office() {
   const params = useSearchParams();
   const ws = params.get("workspace");
-  return ws ? <OfficeView key={ws} workspaceId={ws} /> : <OpenPrimaryOffice />;
+  // ?arrived=<hireId>: just hired from /marketplace, so that worker walks in through the entrance.
+  return ws ? <OfficeView key={ws} workspaceId={ws} arrivedHireId={params.get("arrived")} /> : <OpenPrimaryOffice />;
 }
 
 /** /office with no ?workspace= opens the signed-in user's primary office. */
@@ -147,13 +161,14 @@ function OfficeSwitcher({ current, currentName }: { current: string; currentName
   );
 }
 
-function OfficeView({ workspaceId }: { workspaceId: string }) {
+function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arrivedHireId: string | null }) {
   const base = apiBase(workspaceId);
+  const router = useRouter();
   const [state, setState] = useState<WorkplaceState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [announcement, setAnnouncement] = useState("");
-  const [arrivals, setArrivals] = useState<Set<string>>(() => new Set());
+  const [arrivals, setArrivals] = useState<Set<string>>(() => new Set(arrivedHireId ? [arrivedHireId] : []));
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const floorHeading = useRef<HTMLHeadingElement>(null);
   const focusMapOnHire = useRef(false);
@@ -167,10 +182,19 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
     let cancelled = false;
     api(base).then(r => {
       if (cancelled) return;
-      if (r.ok) setState(r.state); else setLoadError(r.error.message);
+      if (r.ok) {
+        setState(r.state);
+        const arrived = arrivedHireId ? r.state.team.find(h => h.id === arrivedHireId) : undefined;
+        if (arrived) setAnnouncement(`${arrived.characterName}, ${arrived.role}, hired from the marketplace and walking in to ${DESKS.find(d => d.desk === arrived.desk)?.label}.`);
+      } else setLoadError(r.error.message);
     });
     return () => { cancelled = true; };
-  }, [base]);
+  }, [base, arrivedHireId]);
+
+  // Drop ?arrived= so a reload places the worker at its desk instead of replaying the entrance.
+  useEffect(() => {
+    if (arrivedHireId) router.replace(`/office?workspace=${encodeURIComponent(workspaceId)}`, { scroll: false });
+  }, [arrivedHireId, router, workspaceId]);
 
   // Poll while any job is assigned or running.
   const busy = state?.jobs.some(j => j.status === "queued" || j.status === "working") ?? false;
@@ -217,7 +241,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
     const h = r.state.team.find(t => t.profileId === profileId);
     if (h && !state?.team.some(previous => previous.id === h.id)) setArrivals(previous => new Set(previous).add(h.id));
     setState(r.state);
-    setAnnouncement(`${h?.role} hired and walking in to ${DESKS.find(d => d.desk === h?.desk)?.label}.${jobId ? " The original job resumed automatically." : ""}`);
+    setAnnouncement(`${h?.characterName}, ${h?.role}, hired and walking in to ${DESKS.find(d => d.desk === h?.desk)?.label}.${jobId ? " The original job resumed automatically." : ""}`);
     if (!jobId && h) { focusMapOnHire.current = true; setSelection({ hireId: h.id }); }
     requestAnimationFrame(() => floorHeading.current?.focus());
   }
@@ -286,6 +310,7 @@ function OfficeView({ workspaceId }: { workspaceId: string }) {
                 <div className="office-panelHeader"><p className="office-eyebrow">FIND YOUR NEXT TEAMMATE</p><h2 id="panel-title" ref={panelHeading} tabIndex={-1}>The marketplace</h2></div>
                 <div className="office-panelBody">
                   <p className="office-muted">Hire a worker for {DESKS.find(d => d.desk === selectedDesk)?.label}. Hiring is saved and later jobs that need the worker’s skill go to it.</p>
+                  <Link className="office-marketLink" href={marketplaceHref({ workspace: workspaceId })}>Browse the full marketplace: official and community agents <span aria-hidden="true">↗</span></Link>
                   {state.marketplace.map(p => <CandidateCard key={p.id} profile={p} hired={p.hired} onHire={() => hire(p.id)} />)}
                   <p className="office-finePrint">Demo hourly rates. Demo charges are calculated per second of run time and are not billed.</p>
                 </div>
@@ -461,10 +486,10 @@ function SimulatorControls({ fault, onChange }: { fault: string; onChange: (faul
   );
 }
 
-function CandidateCard({ profile, hired, onHire, highlightSkill, cta }: { profile: WorkerProfile; hired: boolean; onHire: () => void; highlightSkill?: string; cta?: string }) {
+function CandidateCard({ profile, hired, onHire, highlightSkill, cta }: { profile: MarketplaceListing; hired: boolean; onHire: () => void; highlightSkill?: string; cta?: string }) {
   return (
-    <article className="office-candidate">
-      <div className="office-candidateHeading"><Avatar worker={profile} /><div><h3>{profile.role}</h3><span className="office-rate">{formatRate(profile.hourlyRateCents).replace(" / hour", "")}<small> / hour</small></span></div></div>
+    <article className="office-candidate" data-listing-id={profile.id}>
+      <div className="office-candidateHeading"><Avatar worker={profile} /><div><h3>{profile.characterName} · {profile.role}</h3><ListingBadge kind={profile.kind} publisher={profile.publisher.name} /><span className="office-rate">{formatRate(profile.hourlyRateCents).replace(" / hour", "")}<small> / hour</small></span></div></div>
       <p>{profile.specialty}</p>
       <ul className="office-skills" aria-label="Skills">{profile.skills.map(s => <li key={s} className={s === highlightSkill ? "office-skillMatch" : ""}>{SKILLS[s]}{s === highlightSkill ? " ✓" : ""}</li>)}</ul>
       <p className="office-candidateMeta"><strong>Sample work:</strong> {profile.sampleWork}</p>
@@ -495,6 +520,7 @@ function JobCard({ job, state, onHire }: { job: JobView; state: WorkplaceState; 
           <p className="office-jobMeta">Nobody on your team has <strong>{SKILLS[job.requiredSkill]}</strong>. Job posting: {posting.deliverable} Sources: {posting.allowedSources} Needs approval: {posting.needsApproval}</p>
           <CandidateCard profile={recommended} hired={recommended.hired} highlightSkill={job.requiredSkill}
             cta={`Approve hire at ${formatRate(recommended.hourlyRateCents)} and resume job`} onHire={() => onHire(recommended.id, job.id)} />
+          <Link className="office-marketLink" href={marketplaceHref({ workspace: state.workspaceId, job: job.id, skill: job.requiredSkill })}>Compare every qualified worker in the marketplace <span aria-hidden="true">↗</span></Link>
         </div>
       )}
       {job.status === "needs_worker" && !recommended && <p className="office-errorText">No marketplace worker has this skill yet.</p>}
@@ -546,14 +572,13 @@ function WorkerPanel({ hire, state, headingRef, reportJobId }: { hire: HireView;
   const jobs = state.jobs.filter(j => j.hireId === hire.id);
   const active = jobs.find(j => j.status === "working") ?? jobs.find(j => j.id === hire.activeJobId);
   const latest = reportJobId ? jobs.find(j => j.id === reportJobId) : jobs.find(j => j.report);
-  const id = characterId(hire.profileId);
-  const character = CHARACTERS[id];
+  const greeting = state.marketplace.find(l => l.id === hire.profileId)?.greeting;
   return (
     <>
       <div className="office-panelHeader"><p className="office-eyebrow">WORKER PROFILE</p><h2 id="panel-title" ref={headingRef} tabIndex={-1}>{hire.role}</h2></div>
       <div className="office-panelBody">
-        <div className="office-characterIdentity"><PixelCharacter id={id} portrait /><div><h3>{character.name}</h3><p>{hire.role}</p><span className="office-status"><span /> {active ? (active.status === "working" ? "Working" : "Job assigned") : latest?.report ? "Report ready" : "Ready"}</span></div></div>
-        <blockquote className="office-characterVoice">“{characterVoice(id, active ?? jobs[0])}”</blockquote>
+        <div className="office-characterIdentity"><PixelCharacter sprite={hire.sprite} portrait /><div><h3>{hire.characterName}</h3><p>{hire.role}</p><ListingBadge kind={hire.listingKind} publisher={hire.publisherName} /><span className="office-status"><span /> {active ? (active.status === "working" ? "Working" : "Job assigned") : latest?.report ? "Report ready" : "Ready"}</span></div></div>
+        <blockquote className="office-characterVoice">“{workerVoice(hire, active ?? jobs[0], greeting)}”</blockquote>
         {latest?.report && <a className="office-viewReport" href="#worker-saved-report" onClick={event => { event.preventDefault(); const report = document.getElementById("worker-report-details") as HTMLDetailsElement | null; if (report) { report.open = true; document.getElementById("worker-saved-report")?.focus(); } }}>View report <span aria-hidden="true">↗</span></a>}
         <h3 className="office-sectionLabel">SKILLS</h3><ul className="office-skills">{hire.skills.map(s => <li key={s}>{SKILLS[s]}</li>)}</ul>
         <dl className="office-details">

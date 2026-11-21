@@ -9,6 +9,9 @@
 //      workspace's hire or job.
 //   3  workspaces.owner_sub: the Auth0 user (sub) who owns the office.
 //      NULL = unowned (data from before sign-in existed); hidden until claimed.
+//   4  marketplace_listings: community agents published by users (global, not
+//      per workspace). hires gain a snapshot of the listing's character name,
+//      sprite, kind and publisher, so the hired character never changes.
 
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
@@ -16,7 +19,7 @@ import path from "node:path";
 
 export type Db = DatabaseSync;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const DEFAULT_WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_NAME = "Default office";
 /** workspace_id used by schema v1 for all rows. */
@@ -158,6 +161,39 @@ function migrateV2toV3(db: Db) {
   `);
 }
 
+/** v3 → v4: community listings and the hire's character snapshot. Additive. */
+function migrateV3toV4(db: Db) {
+  db.exec(`
+    CREATE TABLE marketplace_listings (
+      id                TEXT PRIMARY KEY CHECK (id GLOB 'community-*'),
+      owner_sub         TEXT NOT NULL CHECK (length(owner_sub) BETWEEN 1 AND 255),
+      client_request_id TEXT NOT NULL,
+      publisher_name    TEXT NOT NULL,
+      character_name    TEXT NOT NULL,
+      role              TEXT NOT NULL,
+      specialty         TEXT NOT NULL,
+      greeting          TEXT NOT NULL,
+      skills            TEXT NOT NULL,           -- JSON array of SkillId
+      hourly_rate_cents INTEGER NOT NULL CHECK (hourly_rate_cents BETWEEN 100 AND 5000),
+      sample_work       TEXT NOT NULL,
+      sprite            TEXT NOT NULL,           -- JSON CustomSprite
+      published_at      INTEGER NOT NULL,
+      UNIQUE (owner_sub, client_request_id)
+    );
+    CREATE INDEX listings_by_published ON marketplace_listings (published_at);
+    ALTER TABLE hires ADD COLUMN character_name TEXT;
+    ALTER TABLE hires ADD COLUMN sprite TEXT;   -- JSON SpriteSpec snapshot at hire time
+    ALTER TABLE hires ADD COLUMN listing_kind TEXT CHECK (listing_kind IS NULL OR listing_kind IN ('official', 'community'));
+    ALTER TABLE hires ADD COLUMN publisher_name TEXT;
+    UPDATE hires SET listing_kind = 'official' WHERE source = 'marketplace';
+  `);
+  // Existing hires keep the cast character they already showed.
+  const cast: Record<string, string> = { quality_inspector: "Inez", procurement_researcher: "Ro", catalog_assistant: "Kit" };
+  for (const [profileId, name] of Object.entries(cast)) {
+    db.prepare("UPDATE hires SET character_name = ?, sprite = ? WHERE profile_id = ?").run(name, JSON.stringify({ kind: "cast", id: profileId }), profileId);
+  }
+}
+
 /** Bring any database up to SCHEMA_VERSION, one version at a time. Exported for tests. */
 export function migrate(db: Db, file: string, now = Date.now()) {
   let version = userVersion(db);
@@ -184,6 +220,10 @@ export function migrate(db: Db, file: string, now = Date.now()) {
     if (version === 2) {
       migrateV2toV3(db);
       version = 3;
+    }
+    if (version === 3) {
+      migrateV3toV4(db);
+      version = 4;
     }
     db.prepare("INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(
       DEFAULT_WORKSPACE_ID,

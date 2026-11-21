@@ -3,6 +3,8 @@
 import type { JobType, SkillId, WorkerProfile } from "./catalog.ts";
 import type { LookupMode, LookupResult } from "../procurement.ts";
 import type { Incident } from "../camera-incident.ts";
+import type { MarketplaceListing } from "./marketplace.ts";
+import type { SpriteSpec } from "./sprites.ts";
 
 export type JobStatus = "needs_worker" | "queued" | "working" | "completed" | "failed";
 export type ReportMode = "live" | "sample" | "simulated";
@@ -35,6 +37,12 @@ export interface HireView {
   hiredAt: number;
   activeJobId: string | null;
   completedJobs: number;
+  /** Snapshot from the listing at hire time: the same character the marketplace showed. */
+  characterName: string;
+  sprite: SpriteSpec;
+  /** null for built-in staff. */
+  listingKind: "official" | "community" | null;
+  publisherName: string | null;
 }
 
 export interface ReportView {
@@ -89,7 +97,7 @@ export interface WorkplaceState {
   procurementMode: LookupMode;
   team: HireView[];
   jobs: JobView[];
-  marketplace: (WorkerProfile & { hired: boolean })[];
+  marketplace: (MarketplaceListing & { hired: boolean })[];
   simulator: { cameraFault: string };
 }
 

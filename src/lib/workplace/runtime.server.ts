@@ -17,7 +17,10 @@ import {
   getOwnedWorkspace,
   getState,
   getWorkspace,
+  hireTargets,
+  listMarketplace,
   listWorkspaces,
+  publishListing,
   primaryWorkspaceId,
   recoverJobs,
   resetWorkspace,
@@ -187,4 +190,31 @@ export async function handleReset(ref: WorkspaceRef) {
   const r = resetWorkspace(getDb(), auth.ws, Date.now());
   if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
   return withState(auth.ws);
+}
+
+// --- marketplace (global listings; hiring still goes through a workspace) ------
+
+export async function handleMarketplace() {
+  await connection();
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+  const db = getDb();
+  // Suggested publisher name: the first word of the profile name, never the email address.
+  const first = viewer.name && !viewer.name.includes("@") ? viewer.name.trim().split(/\s+/)[0].slice(0, 40) : "";
+  return Response.json({
+    ok: true,
+    listings: listMarketplace(db, viewer.sub),
+    workspaces: hireTargets(db, viewer.sub),
+    viewer: { name: viewer.name, suggestedPublisherName: first },
+  });
+}
+
+export async function handlePublish(request: Request) {
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+  const body = await readObject(request);
+  if (!body) return badBody();
+  const r = publishListing(getDb(), serviceDeps(), viewer.sub, { clientRequestId: body.clientRequestId, listing: body.listing });
+  if (!r.ok) return Response.json({ ok: false, error: r.error }, { status: r.status });
+  return Response.json({ ok: true, listing: r.listing, created: r.created }, { status: r.created ? 201 : 200 });
 }

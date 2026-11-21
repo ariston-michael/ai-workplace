@@ -31,6 +31,8 @@ All bodies are JSON. Errors are always `{ ok: false, error: { code, message } }`
 | POST | `/api/workspaces/{id}/hires` | `{ profileId, jobId? }` | `{ ok, hireId, created, state }` |
 | POST | `/api/workspaces/{id}/simulator` | `{ cameraFault }` | `{ ok, state }` |
 | POST | `/api/workspaces/{id}/reset` | — | `{ ok, state }` |
+| GET | `/api/marketplace` | — | `{ ok, listings: MarketplaceListing[], workspaces: HireTarget[], viewer: { name, suggestedPublisherName } }` |
+| POST | `/api/marketplace/listings` | `{ clientRequestId, listing: PublishDraft }` | `201 { ok, listing, created: true }`; a retry with the same id answers `200` with `created: false` |
 
 Legacy aliases (same handlers and checks, applied to the **caller's primary office**): `GET /api/workplace`, `POST /api/workplace/{jobs,hires,simulator,reset}`. Prefer the `/api/workspaces/{id}` routes in new code.
 
@@ -54,7 +56,40 @@ Legacy aliases (same handlers and checks, applied to the **caller's primary offi
 - With `jobId`: approves the Dispatcher's recommendation for a `needs_worker` job. The worker is seated and **every** `needs_worker` job in that workspace needing that skill resumes automatically.
 - Without `jobId`: hire directly from the marketplace (vacant desk).
 - Idempotent: hiring an already-hired profile returns the existing `hireId` with `created: false` and starts nothing new.
-- `profileId` values: `procurement_researcher`, `catalog_assistant`.
+- `profileId` is any `MarketplaceListing.id`: the official `procurement_researcher` and `catalog_assistant`, or a community id `community-<slug>-<suffix>`. A community agent can be approved for a held job if it has the job's skill (the user may pick it over the Dispatcher's recommendation).
+- The hire **snapshots** the listing's `characterName`, `sprite`, `kind` and publisher name, as well as role, skills and rate. The office always draws the hire from that snapshot, so the character from the marketplace is the one that walks in.
+
+### Marketplace (`/marketplace`)
+
+The page reads these query parameters, which the office uses as links:
+
+| Param | Meaning |
+|---|---|
+| `filter` | `official` or `community`; omitted = All |
+| `workspace` | Office the user came from (empty desk). The picker preselects it. |
+| `job` + `skill` | From a Dispatcher recommendation. Qualified listings sort first, others cannot be hired, and the picker is locked to `workspace` so the held job resumes. |
+
+After a successful hire the page goes to `/office?workspace=<id>&arrived=<hireId>` (only when `created`). The office plays the entrance walk for that hire, then drops `arrived` from the URL so a reload does not replay it.
+
+Listings are global (every signed-in user sees the same list). Hiring still goes through `POST /api/workspaces/{id}/hires`, so ownership checks are unchanged.
+
+### Publishing (`POST /api/marketplace/listings`)
+
+`listing` (all required):
+
+| Field | Rule |
+|---|---|
+| `characterName` | 1–24 chars |
+| `role` | 3–40 chars |
+| `specialty` | 10–160 chars |
+| `greeting` | 3–120 chars, said by the character when idle |
+| `skills` | 1–3 `SkillId`s |
+| `hourlyRateCents` | integer 100–5000 |
+| `sampleWork` | 10–200 chars |
+| `publisherName` | 1–40 chars, shown on the listing. "AI Workplace" is reserved. |
+| `sprite` | `CustomSprite` (below); `kind: "cast"` is rejected |
+
+Whitespace is collapsed. Errors answer `400 INVALID_LISTING` with `error.fields: { [field]: message }` for inline display. Each user can publish up to 12 listings (`409 LISTING_LIMIT`). There is no edit or unpublish route yet; existing hires keep their snapshot regardless.
 
 ### Simulator (`POST …/simulator`)
 
@@ -86,8 +121,30 @@ Jobs run after the response is sent. While any job is `queued` or `working`, pol
 | `marketplace` | `(WorkerProfile & { hired: boolean })[]` | `hired` is per workspace |
 | `simulator` | `{ cameraFault: string }` | |
 
+### `MarketplaceListing`
+Everything in `WorkerProfile` (`id`, `role`, `initials`, `color`, `specialty`, `skills`, `hourlyRateCents`, `sampleWork`, `permissions`) plus:
+
+| Field | Type | Notes |
+|---|---|---|
+| `kind` | `"official" \| "community"` | filter key |
+| `verified` | boolean | `true` only for official → blue pixel check (`VerifiedCheck`) |
+| `characterName` | string | "Ro", "Kit", or the publisher's choice |
+| `greeting` | string | idle line |
+| `sprite` | `SpriteSpec` | render with `<PixelCharacter sprite={…} />` |
+| `publisher` | `{ name, isYou }` | official = "AI Workplace". The publisher's Auth0 `sub` is never sent. |
+| `publishedAt` | number \| null | null for official |
+
+`permissions` are derived on the server from `skills` (same text for official and community); publishers cannot set them. In `WorkplaceState.marketplace` each listing also has `hired` (per workspace).
+
+### `SpriteSpec`
+- `{ kind: "cast", id: "dispatcher" | "quality_inspector" | "procurement_researcher" | "catalog_assistant" }`: the hand-drawn official characters.
+- `CustomSprite` `{ kind: "custom", skin, outfit, trim, hair, hairColor, accessory }`, each value a key from [src/lib/workplace/sprites.ts](../src/lib/workplace/sprites.ts): `skin` ∈ porcelain, sand, amber, umber, ebony; `outfit`/`trim` ∈ coral, teal, violet, amber, moss, navy, rose, slate; `hair` ∈ crop, long, bun, curls, cap, beanie, shaved; `hairColor` ∈ ink, chestnut, copper, honey, silver, plum; `accessory` ∈ none, glasses, satchel, tablet, toolbelt, badge. No free-form colours or markup.
+
+### `HireTarget` (workspace picker)
+`{ id, name, openDesks, hiredListingIds }` for each of the caller's offices. Disable a row when the listing is already hired there or `openDesks` is 0.
+
 ### `HireView`
-`id`, `profileId`, `role`, `initials`, `color` (`coral|sage|gold|blue`), `specialty`, `skills: SkillId[]`, `hourlyRateCents: number|null` (null = staff, not billed), `source: "staff"|"marketplace"`, `desk: "workstation-01"|"desk-02"|"desk-03"`, `hiredAt`, `activeJobId: string|null`, `completedJobs: number`.
+`id`, `profileId`, `role`, `characterName`, `sprite: SpriteSpec`, `listingKind: "official"|"community"|null` (null = staff), `publisherName: string|null`, `initials`, `color` (`coral|sage|gold|blue`), `specialty`, `skills: SkillId[]`, `hourlyRateCents: number|null` (null = staff, not billed), `source: "staff"|"marketplace"`, `desk: "workstation-01"|"desk-02"|"desk-03"`, `hiredAt`, `activeJobId: string|null`, `completedJobs: number`.
 
 Desks are per workspace: every office has its own Workstation 01 (Quality Inspector), Desk 02 and Desk 03.
 
@@ -130,18 +187,21 @@ Desks are per workspace: every office has its own Workstation 01 (Quality Inspec
 | `NO_OPEN_DESK` | 409 | all desks taken |
 | `UNKNOWN_FAULT` | 400 | bad `cameraFault` |
 | `UNKNOWN_SUPPLIER` | 400 | supplier not on the approved list |
+| `INVALID_LISTING` | 400 | publish form invalid; see `error.fields` |
+| `LISTING_LIMIT` | 409 | publisher already has 12 listings |
 
-## Database (schema v3, `PRAGMA user_version = 3`)
+## Database (schema v4, `PRAGMA user_version = 4`)
 
 File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Opening an older file migrates it automatically after writing `<file>.v<old version>-backup-<timestamp>`.
 
 | Table | Key columns | Scoping |
 |---|---|---|
 | `workspaces` | `id` (slug), `name`, `created_at`, `owner_sub` (Auth0 `sub`; NULL = unclaimed) | owner |
-| `hires` | `id`, `workspace_id`, `profile_id`, `desk`, rate/skills snapshot | FK → workspaces; unique per workspace: `profile_id`, `desk` |
+| `hires` | `id`, `workspace_id`, `profile_id`, `desk`, rate/skills snapshot, v4: `character_name`, `sprite`, `listing_kind`, `publisher_name` | FK → workspaces; unique per workspace: `profile_id`, `desk` |
 | `jobs` | `id`, `workspace_id`, `client_request_id`, `status`, `hire_id` | FK `(workspace_id, hire_id)` → hires: a job can only be assigned to its own workspace's hire |
 | `job_events` | `job_id`, `at`, `actor`, `text` | via job (cascade delete) |
 | `reports` | `id`, `workspace_id`, `job_id`, `hire_id`, `mode`, `outcome`, `body` | FK `(workspace_id, job_id)` → jobs and `(workspace_id, hire_id)` → hires |
+| `marketplace_listings` | `id` (`community-…`), `owner_sub`, `client_request_id`, `publisher_name`, `character_name`, `role`, `specialty`, `greeting`, `skills`, `hourly_rate_cents`, `sample_work`, `sprite`, `published_at` | global; unique `(owner_sub, client_request_id)` |
 | `simulator_settings` | `workspace_id` (PK), `camera_fault` | FK → workspaces |
 
 Reset deletes that workspace's reports, events, jobs, hires and simulator settings, then reseeds the Quality Inspector. There is no delete-workspace route yet.

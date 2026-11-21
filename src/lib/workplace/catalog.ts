@@ -52,6 +52,8 @@ export interface WorkerProfile {
   hourlyRateCents: number | null;
   sampleWork: string;
   permissions: string[];
+  /** Marketplace listings only: official (verified) or community (published by a user). */
+  kind?: "official" | "community";
 }
 
 /** Workers available to hire. */

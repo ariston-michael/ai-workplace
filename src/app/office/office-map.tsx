@@ -6,7 +6,6 @@ import { MAP_WIDTH, MAP_HEIGHT, MAP_STATIONS, MAP_DECOR, RECEPTION, type Rect, t
 import { workerMovement } from "@/lib/workplace/movement";
 import type { HireView, JobView } from "@/lib/workplace/types";
 import PixelCharacter from "./pixel-character";
-import { CHARACTERS, characterId } from "@/lib/workplace/characters";
 import { OfficeWalker } from "./office-walker";
 import "./office-map.css";
 
@@ -44,8 +43,8 @@ function Worker({ hire, jobs, size, arriving, selected, onClick }: {
   const report = movement.kind === "returned";
   const label = report ? "Report ready. Read saved report" : movement.kind === "failed" ? "Returned with an error. View outcome" : movement.kind === "working" ? "Working on a job" : movement.kind === "assigned" ? "Assigned to workstation" : "View worker";
   return <button ref={button} type="button" className="office-mapWalker" data-worker-id={hire.id} data-desk={hire.desk} data-movement={movement.kind}
-    aria-label={`${hire.role}: ${label} · ${CHARACTERS[characterId(hire.profileId)].name}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
-    <PixelCharacter key={movement.eventKey} id={characterId(hire.profileId)} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
+    aria-label={`${hire.role}: ${label} · ${hire.characterName}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
+    <PixelCharacter key={movement.eventKey} sprite={hire.sprite} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
     {report && <span className="office-mapReportBadge" aria-hidden="true">▤</span>}
     {movement.kind === "failed" && <span className="office-mapReportBadge" aria-hidden="true">!</span>}
     <span className="office-mapWorkerLabel">{hire.role}{report ? " · Report ready" : ""}</span>

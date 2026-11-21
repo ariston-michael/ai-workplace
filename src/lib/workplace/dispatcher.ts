@@ -2,6 +2,7 @@
 // team, either assign an existing hire or recommend a marketplace worker.
 
 import { JOB_TYPES, MARKETPLACE, SKILLS, type JobType, type SkillId, type WorkerProfile } from "./catalog.ts";
+import { recommendationOrder } from "./marketplace.ts";
 
 export interface TeamMember {
   id: string;
@@ -22,9 +23,8 @@ export type RoutingDecision =
     };
 
 export function qualifiedProfiles(skill: SkillId, marketplace: WorkerProfile[] = MARKETPLACE): WorkerProfile[] {
-  return marketplace
-    .filter((p) => p.skills.includes(skill))
-    .sort((a, b) => (a.hourlyRateCents ?? 0) - (b.hourlyRateCents ?? 0));
+  // Official (verified) workers first, then the cheapest.
+  return marketplace.filter((p) => p.skills.includes(skill)).sort(recommendationOrder);
 }
 
 export function routeJob(type: JobType, team: TeamMember[], marketplace: WorkerProfile[] = MARKETPLACE): RoutingDecision {
@@ -47,7 +47,7 @@ export function routeJob(type: JobType, team: TeamMember[], marketplace: WorkerP
     recommended,
     qualified,
     note: recommended
-      ? `${checked} Nobody on the team has ${skillName}. Recommending ${recommended.role} from the marketplace.`
+      ? `${checked} Nobody on the team has ${skillName}. Recommending ${recommended.role} from the marketplace${recommended.kind === "community" ? " (community listing, not verified)" : ""}.`
       : `${checked} Nobody on the team or in the marketplace has ${skillName}.`,
   };
 }

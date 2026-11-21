@@ -7,7 +7,6 @@ import {
   DISPATCHER,
   HIRE_DESKS,
   JOB_TYPES,
-  MARKETPLACE,
   SKILLS,
   STAFF,
   STAFF_DESK,
@@ -34,6 +33,18 @@ import type {
 import { validateLookupRequest, findSupplier, type LookupMode, type LookupResponse, type Supplier } from "../procurement.ts";
 import { SCENARIOS, runScenario } from "../camera-incident.ts";
 import { cameraReport } from "../office-camera-report.ts";
+import {
+  OFFICIAL_LISTINGS,
+  OFFICIAL_PUBLISHER,
+  PUBLISH_LIMITS,
+  initialsOf,
+  permissionsFor,
+  validatePublish,
+  type MarketplaceListing,
+  type PublishField,
+} from "./marketplace.ts";
+import { castSprite, readSprite } from "./sprites.ts";
+import { CHARACTERS, characterId } from "./characters.ts";
 import { interpretRequest, STATION, type TranscriptLine } from "./intake.ts";
 
 export { DEFAULT_WORKSPACE_ID };
@@ -189,6 +200,11 @@ interface HireRow {
   source: "staff" | "marketplace";
   desk: string;
   hired_at: number;
+  /** v4 snapshot of the listing; NULL on rows that predate it. */
+  character_name: string | null;
+  sprite: string | null;
+  listing_kind: "official" | "community" | null;
+  publisher_name: string | null;
 }
 
 interface JobRow {
@@ -250,9 +266,13 @@ function deskLabel(desk: string): string {
 export function ensureSeeded(db: Db, ws: string, now: number) {
   for (const profile of STAFF) {
     db.prepare(
-      `INSERT OR IGNORE INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'staff', ?, ?)`,
-    ).run(ws === DEFAULT_WORKSPACE_ID ? `staff_${profile.id}` : `staff_${ws}_${profile.id}`, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, STAFF_DESK, now);
+      `INSERT OR IGNORE INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at, character_name, sprite)
+       VALUES (?, ?, ?, ?, ?, ?, 'staff', ?, ?, ?, ?)`,
+    ).run(
+      ws === DEFAULT_WORKSPACE_ID ? `staff_${profile.id}` : `staff_${ws}_${profile.id}`,
+      ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, STAFF_DESK, now,
+      CHARACTERS.quality_inspector.name, JSON.stringify(castSprite("quality_inspector")),
+    );
   }
 }
 
@@ -386,7 +406,7 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
     if (existing) return { ok: true as const, jobId: existing.id, runJobIds: [] };
 
     const jobId = deps.newId("job");
-    const decision = routeJob(type, hires(db, ws).map(toMember));
+    const decision = routeJob(type, hires(db, ws).map(toMember), listMarketplace(db));
     db.prepare(
       `INSERT INTO jobs (id, workspace_id, client_request_id, type, title, input, required_skill, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'needs_worker', ?)`,
@@ -435,7 +455,7 @@ export function approveHire(
   req: HireInput,
 ): Result<{ hireId: string; created: boolean; runJobIds: string[] }> {
   if (!getWorkspace(db, ws)) return missingWorkspace(ws);
-  const profile = MARKETPLACE.find((p) => p.id === req.profileId);
+  const profile = typeof req.profileId === "string" ? findListing(db, req.profileId) : undefined;
   if (!profile) return fail(400, "UNKNOWN_PROFILE", "That worker is not in the marketplace.");
   if (req.jobId !== undefined && typeof req.jobId !== "string") return fail(400, "INVALID_REQUEST", "jobId must be a string.");
   const jobId = req.jobId as string | undefined;
@@ -462,13 +482,18 @@ export function approveHire(
       if (!desk) return fail(409, "NO_OPEN_DESK", "Every desk is taken.");
       const id = deps.newId("hire");
       db.prepare(
-        `INSERT INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'marketplace', ?, ?)`,
-      ).run(id, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, desk, now);
+        `INSERT INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at,
+           character_name, sprite, listing_kind, publisher_name)
+         VALUES (?, ?, ?, ?, ?, ?, 'marketplace', ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, desk, now,
+        // Snapshot: the exact character from the listing walks in and stays, whatever happens to the listing.
+        profile.characterName, JSON.stringify(profile.sprite), profile.kind, profile.publisher.name,
+      );
       hire = hires(db, ws).find((h) => h.id === id)!;
       created = true;
       if (job) {
-        addEvent(db, job.id, now, "You", `Approved hiring ${profile.role} at ${formatRate(profile.hourlyRateCents)}.`);
+        addEvent(db, job.id, now, "You", `Approved hiring ${profile.characterName} (${profile.role}${profile.kind === "community" ? `, community listing by ${profile.publisher.name}` : ""}) at ${formatRate(profile.hourlyRateCents)}.`);
         addEvent(db, job.id, now, profile.role, `Arrived at ${deskLabel(desk)}.`);
       }
     }
@@ -631,7 +656,7 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
     .all(ws) as unknown as { hire_id: string; n: number }[];
 
   const team: HireView[] = hireRows.map((h) => {
-    const profile = findProfile(h.profile_id);
+    const profile = findProfile(h.profile_id) ?? findListing(db, h.profile_id);
     const active = jobRows.find((j) => j.hire_id === h.id && (j.status === "working" || j.status === "queued"));
     return {
       id: h.id,
@@ -647,6 +672,10 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
       hiredAt: h.hired_at,
       activeJobId: active?.id ?? null,
       completedJobs: completedCounts.find((c) => c.hire_id === h.id)?.n ?? 0,
+      characterName: h.character_name ?? CHARACTERS[characterId(h.profile_id)].name,
+      sprite: readSprite(h.sprite, h.profile_id),
+      listingKind: h.listing_kind ?? (h.source === "staff" ? null : "official"),
+      publisherName: h.source === "staff" ? null : h.publisher_name ?? OFFICIAL_PUBLISHER,
     };
   });
 
@@ -690,7 +719,125 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
     procurementMode,
     team,
     jobs,
-    marketplace: MARKETPLACE.map((p) => ({ ...p, hired: hireRows.some((h) => h.profile_id === p.id) })),
+    marketplace: listMarketplace(db).map((p) => ({ ...p, hired: hireRows.some((h) => h.profile_id === p.id) })),
     simulator: { cameraFault: getCameraFault(db, ws) },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace listings
+// ---------------------------------------------------------------------------
+
+interface ListingRow {
+  id: string;
+  owner_sub: string;
+  client_request_id: string;
+  publisher_name: string;
+  character_name: string;
+  role: string;
+  specialty: string;
+  greeting: string;
+  skills: string;
+  hourly_rate_cents: number;
+  sample_work: string;
+  sprite: string;
+  published_at: number;
+}
+
+function toListing(r: ListingRow, viewerSub?: string): MarketplaceListing {
+  const skills = JSON.parse(r.skills) as SkillId[];
+  return {
+    id: r.id,
+    kind: "community",
+    verified: false,
+    characterName: r.character_name,
+    role: r.role,
+    initials: initialsOf(r.role),
+    color: "blue",
+    specialty: r.specialty,
+    greeting: r.greeting,
+    skills,
+    hourlyRateCents: r.hourly_rate_cents,
+    sampleWork: r.sample_work,
+    permissions: permissionsFor(skills),
+    sprite: readSprite(r.sprite, r.id),
+    publisher: { name: r.publisher_name, isYou: viewerSub !== undefined && r.owner_sub === viewerSub },
+    publishedAt: r.published_at,
+  };
+}
+
+/** Official listings first (catalog order), then community listings oldest first. Never exposes owner_sub. */
+export function listMarketplace(db: Db, viewerSub?: string): MarketplaceListing[] {
+  const rows = db.prepare("SELECT * FROM marketplace_listings ORDER BY published_at, id").all() as unknown as ListingRow[];
+  return [...OFFICIAL_LISTINGS, ...rows.map((r) => toListing(r, viewerSub))];
+}
+
+export function findListing(db: Db, id: string): MarketplaceListing | undefined {
+  const official = OFFICIAL_LISTINGS.find((l) => l.id === id);
+  if (official) return official;
+  const row = db.prepare("SELECT * FROM marketplace_listings WHERE id = ?").get(id) as unknown as ListingRow | undefined;
+  return row ? toListing(row) : undefined;
+}
+
+export interface PublishInput {
+  clientRequestId: unknown;
+  listing: unknown;
+}
+
+export type PublishResult =
+  | { ok: true; listing: MarketplaceListing; created: boolean }
+  | { ok: false; status: number; error: ApiError & { fields?: Partial<Record<PublishField, string>> } };
+
+const REQUEST_ID = /^[A-Za-z0-9_-]{8,100}$/;
+
+/** Publishes a community listing owned by the signed-in user. Retrying with the same clientRequestId returns the first listing. */
+export function publishListing(db: Db, deps: ServiceDeps, ownerSub: string, req: PublishInput): PublishResult {
+  if (typeof req.clientRequestId !== "string" || !REQUEST_ID.test(req.clientRequestId)) {
+    return fail(400, "INVALID_REQUEST", "clientRequestId must be 8–100 letters, digits, '-' or '_'.");
+  }
+  const clientRequestId = req.clientRequestId;
+  return transaction(db, (): PublishResult => {
+    const existing = db
+      .prepare("SELECT * FROM marketplace_listings WHERE owner_sub = ? AND client_request_id = ?")
+      .get(ownerSub, clientRequestId) as unknown as ListingRow | undefined;
+    if (existing) return { ok: true, listing: toListing(existing, ownerSub), created: false };
+
+    const v = validatePublish(req.listing);
+    if (!v.ok) return { ok: false, status: 400, error: { code: "INVALID_LISTING", message: "Some listing fields need attention.", fields: v.errors } };
+    const count = (db.prepare("SELECT COUNT(*) AS n FROM marketplace_listings WHERE owner_sub = ?").get(ownerSub) as { n: number }).n;
+    if (count >= PUBLISH_LIMITS.perPublisher) {
+      return fail(409, "LISTING_LIMIT", `You can publish up to ${PUBLISH_LIMITS.perPublisher} agents.`);
+    }
+    const d = v.draft;
+    const slug = d.characterName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "agent";
+    const id = `community-${slug}-${deps.newId("l").replace(/[^A-Za-z0-9]/g, "").slice(-6).toLowerCase()}`;
+    db.prepare(
+      `INSERT INTO marketplace_listings (id, owner_sub, client_request_id, publisher_name, character_name, role, specialty,
+         greeting, skills, hourly_rate_cents, sample_work, sprite, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, ownerSub, clientRequestId, d.publisherName, d.characterName, d.role, d.specialty, d.greeting,
+      JSON.stringify(d.skills), d.hourlyRateCents, d.sampleWork, JSON.stringify(d.sprite), deps.now());
+    const row = db.prepare("SELECT * FROM marketplace_listings WHERE id = ?").get(id) as unknown as ListingRow;
+    return { ok: true, listing: toListing(row, ownerSub), created: true };
+  });
+}
+
+export interface HireTarget {
+  id: string;
+  name: string;
+  openDesks: number;
+  hiredListingIds: string[];
+}
+
+/** The caller's offices, for the marketplace's workspace picker. */
+export function hireTargets(db: Db, ownerSub: string): HireTarget[] {
+  return listWorkspaces(db, ownerSub).map((w) => {
+    const rows = db.prepare("SELECT profile_id, desk FROM hires WHERE workspace_id = ?").all(w.id) as { profile_id: string; desk: string }[];
+    return {
+      id: w.id,
+      name: w.name,
+      openDesks: HIRE_DESKS.filter((d) => !rows.some((r) => r.desk === d)).length,
+      hiredListingIds: rows.map((r) => r.profile_id),
+    };
+  });
 }
