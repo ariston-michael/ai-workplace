@@ -908,7 +908,7 @@ export function getState(
       status: j.status,
       hireId: j.hire_id,
       hireRole: anyHire(j.hire_id)?.role ?? null,
-      sms: sms ? { code: sms.code, phone: `•••${sms.phone.slice(-4)}` } : null,
+      sms: sms ? { code: sms.code, ...(sms.phone.startsWith("+999") ? { simulated: true } : {}), phone: `•••${sms.phone.slice(-4)}` } : null,
       hireName: (() => { const h = anyHire(j.hire_id); return h ? snapshot(h).characterName : null; })(),
       recommendedProfileId: j.recommended_profile_id,
       createdAt: j.created_at,

@@ -1,3 +1,4 @@
+import { simulatedSmsEnabled, simulateSms, simulationMessages } from "../sms/simulated.server.ts";
 // Wires the workplace service to the real clock, SQLite file and procurement
 // provider (fixture by default), and holds the request handlers shared by
 // /api/workspaces/[workspaceId]/* and the legacy /api/workplace/* aliases.
@@ -58,7 +59,8 @@ export function scheduleJobs(jobIds: string[]) {
         await runJob(getDb(), serviceDeps(), id);
         // If the job was requested by text, send its result once.
         const twilio = twilioConfig();
-        if (twilio) await notifySmsResult(getDb(), Date.now(), id, (to, body) => sendSms(twilio, to, body));
+        if (simulatedSmsEnabled()) await notifySmsResult(getDb(), Date.now(), id, async () => ({ ok: true, sid: `SIMULATED_${id}`, status: "simulated" }));
+        else if (twilio) await notifySmsResult(getDb(), Date.now(), id, (to, body) => sendSms(twilio, to, body));
       } catch (err) {
         console.error(`[workplace] job ${id} crashed`, err);
       }
@@ -299,6 +301,7 @@ export async function handleSmsSettings(request: Request | null, ref: WorkspaceR
   const auth = await authorize(ref);
   if (auth instanceof Response) return auth;
   const db = getDb();
+  if (simulatedSmsEnabled()) return Response.json({ ok: true, sms: { configured: true, mode: "simulated", number: null, links: [], code: null, messages: simulationMessages(db, auth.ws, auth.viewer.sub) } }, { headers: { "Cache-Control": "no-store" } });
   const twilio = twilioConfig();
   let code: { code: string; expiresAt: number } | null = null;
   if (request) {
@@ -312,4 +315,16 @@ export async function handleSmsSettings(request: Request | null, ref: WorkspaceR
     } else return errorJson(400, "INVALID_REQUEST", "action must be link_code or unlink.");
   }
   return Response.json({ ok: true, sms: { configured: !!twilio, number: twilio?.phoneNumber ?? null, links: listLinks(db, auth.ws), code } }, { headers: { "Cache-Control": "no-store" } });
+}
+
+
+export async function handleSimulatedSms(request: Request, ref: WorkspaceRef) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  if (!simulatedSmsEnabled()) return errorJson(404, "NOT_FOUND", "Simulated SMS is not enabled.");
+  const body = await readObject(request);
+  if (!body || typeof body.text !== "string" || !body.text.trim() || body.text.length > 500 || typeof body.clientRequestId !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(body.clientRequestId)) return errorJson(400, "INVALID_REQUEST", "Supply a text of 1–500 characters and a valid request ID.");
+  const result = await simulateSms(getDb(), { ...serviceDeps(), dispatch: (text, pending, opts) => dispatch(text, pending, opts, geminiConfig()) }, auth.ws, auth.viewer.sub, body.text, body.clientRequestId);
+  scheduleJobs(result.runJobIds);
+  return Response.json({ ok: true, reply: result.reply, mode: "simulated" }, { headers: { "Cache-Control": "no-store" } });
 }

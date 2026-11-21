@@ -644,7 +644,7 @@ function JobCard({ job, state, onHire, onKeep }: { job: JobView; state: Workplac
         {job.report && <ModeBadge mode={job.report.mode} />}
       </div>
       {job.input.request && <p className="office-jobRequest">“{job.input.request}”</p>}
-      {job.sms && <p className="office-jobMeta office-smsJob">📱 Requested by text from {job.sms.phone} · job code <strong>{job.sms.code}</strong></p>}
+      {job.sms && <p className="office-jobMeta office-smsJob">📱 Requested by {job.sms.simulated ? "SIMULATED SMS" : "text"} from {job.sms.phone} · job code <strong>{job.sms.code}</strong></p>}
       {"csv" in job.input && <p className="office-jobMeta">Input: private inventory CSV ({job.input.csv.trim().split(/\r?\n/).length - 1} rows), kept in this office.</p>}
       <p className="office-jobMeta">
         Needs {SKILLS[job.requiredSkill]} · {job.hireRole ? <>Assigned to <strong>{job.hireName ? `${job.hireName}, ` : ""}{job.hireRole}</strong>{worker ? (worker.departedAt ? " · left the office" : jobOnly ? " · for this job" : " · on the team") : ""}</> : "Unassigned"}

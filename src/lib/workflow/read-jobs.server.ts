@@ -41,7 +41,7 @@ export function readSavedJobs(file = defaultDbPath(), workspaceId: string | unde
       const report = reports.find(item => item.jobId === row.id);
       return {
         ...row, input: JSON.parse(row.input), error: row.error ? JSON.parse(row.error) : null,
-        sms: smsCode && smsPhone ? { code: smsCode, phone: `•••${smsPhone.slice(-4)}` } : null,
+        sms: smsCode && smsPhone ? { code: smsCode, ...(smsPhone.startsWith("+999") ? { simulated: true } : {}), phone: `•••${smsPhone.slice(-4)}` } : null,
         events: events.filter(event => event.jobId === row.id).map(({ at, actor, text }) => ({ at, actor, text })),
         report: report ? {
           id: report.id, mode: report.mode, outcome: report.outcome, summary: report.summary,

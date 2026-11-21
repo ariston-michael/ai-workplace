@@ -6,7 +6,7 @@
 //   npm run build && npm run test:sms
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createServer as createNetServer } from "node:net";
@@ -62,7 +62,7 @@ const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "star
     WORKPLACE_DB_PATH: path.join(temp, "sms.db"), WORKPLACE_DEMO_OWNER_EMAIL: "", PROCUREMENT_MODE: "sample", PROCUREMENT_FIXTURE_DELAY_MS: "800",
     TINYFISH_API_KEY: "fixture-not-used", TINYFISH_BASE_URL: tinyfish.url,
     GEMINI_API_KEY: "fixture-gemini-key", GEMINI_BASE_URL: gemini.url,
-    TWILIO_ACCOUNT_SID: ACCOUNT, TWILIO_AUTH_TOKEN: TOKEN, TWILIO_PHONE_NUMBER: NUMBER, TWILIO_WEBHOOK_URL: WEBHOOK, TWILIO_API_BASE: twilioApi.url,
+    SMS_MODE: "twilio", TWILIO_ACCOUNT_SID: ACCOUNT, TWILIO_AUTH_TOKEN: TOKEN, TWILIO_PHONE_NUMBER: NUMBER, TWILIO_WEBHOOK_URL: WEBHOOK, TWILIO_API_BASE: twilioApi.url,
   },
 });
 let log = ""; server.stdout.on("data", d => { log += d; }); server.stderr.on("data", d => { log += d; });
@@ -134,7 +134,7 @@ try {
   const pageErrors = []; page.on("pageerror", error => pageErrors.push(error.message));
   await page.goto(`${base}/office?workspace=${ws}`);
   await page.locator(`.office-jobCard[data-job-id="${state.jobs[0].id}"]`).waitFor();
-  ok(await page.locator(".office-office").getAttribute("data-preview-branch") === "sms-office-integration", "testing the SMS + retro integration build");
+  ok(await page.locator(".office-office").getAttribute("data-preview-branch") === JSON.parse(readFileSync(path.join(root, ".next/required-server-files.json"), "utf8")).config.env.NEXT_PUBLIC_PREVIEW_BRANCH, "testing the SMS + retro integration build");
   ok(await page.locator(".office-pixelMap").evaluate(el => getComputedStyle(el).backgroundColor === "rgb(69, 169, 225)"), "the observed office is the blue tiled redesign");
   let releasePoll;
   const pollGate = new Promise(resolve => { releasePoll = resolve; });

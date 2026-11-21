@@ -1,0 +1,49 @@
+name: ai-workplace
+services:
+  app:
+    image: ai-workplace:${DEPLOY_COMMIT:?Set DEPLOY_COMMIT to the exact source SHA}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        DEPLOY_COMMIT: ${DEPLOY_COMMIT}
+        DEPLOY_BRANCH: ${DEPLOY_BRANCH:-vultr-deployment}
+    restart: unless-stopped
+    env_file: ${APP_ENV_FILE:-/etc/ai-workplace/app.env}
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?Set the public DNS hostname}
+      APP_BASE_URL: https://${PUBLIC_HOSTNAME}
+      WORKPLACE_DB_PATH: /var/lib/ai-workplace/workplace.db
+      PROCUREMENT_MODE: sample
+      SMS_MODE: simulated
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    volumes:
+      - /var/lib/ai-workplace:/var/lib/ai-workplace
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME}
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  caddy-data:
+  caddy-config:

@@ -46,3 +46,7 @@ next-env.d.ts
 
 # local SQLite data
 /data/
+
+# Deployment runtime files belong outside the repository.
+/deploy/*.env
+/deploy/*.key

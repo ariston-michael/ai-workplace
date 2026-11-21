@@ -106,7 +106,7 @@ export interface JobView {
   /** Character name from the hire's snapshot, kept after the worker leaves. */
   hireName: string | null;
   /** Set when the job was requested by text: its job code and the masked phone. */
-  sms?: { code: string; phone: string } | null;
+  sms?: { code: string; phone: string; simulated?: boolean } | null;
   recommendedProfileId: string | null;
   createdAt: number;
   assignedAt: number | null;

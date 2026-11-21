@@ -75,7 +75,7 @@ function JobDetail({ job, headingRef }: { job: JobView; headingRef: React.RefObj
       <section aria-labelledby="request-title"><p className="workflow-step">01 / THE REQUEST</p><h3 id="request-title">What the user asked</h3>
         <dl className="workflow-facts">{"partName" in job.input ? <><div><dt>Part</dt><dd>{job.input.partName}</dd></div><div><dt>Supplier</dt><dd>{job.input.supplierName}</dd></div></> : "csv" in job.input ? <div><dt>Input</dt><dd>Private inventory CSV · submitted to this job</dd></div> : <div><dt>Station</dt><dd>{job.input.station ?? job.title}</dd></div>}<div><dt>Required skill</dt><dd>{SKILLS[job.requiredSkill]}</dd></div></dl>
         {"csv" in job.input && <details><summary>Submitted inventory CSV</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{job.input.csv}</pre></details>}
-        {job.sms && <p className="workflow-id">📱 Requested by text from {job.sms.phone} · job code {job.sms.code}</p>}
+        {job.sms && <p className="workflow-id">📱 Requested by {job.sms.simulated ? "SIMULATED SMS" : "text"} from {job.sms.phone} · job code {job.sms.code}</p>}
         {job.input.request && <blockquote>{job.input.request}</blockquote>}
         {job.events.filter(event => event.actor === "You").map((event, index) => <blockquote key={index}>{event.text}</blockquote>)}
       </section>

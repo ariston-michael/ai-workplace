@@ -298,7 +298,7 @@ export async function notifySmsResult(db: Db, now: number, jobId: string, send: 
   const sent = await send(sj.phone, body);
   if (sent.ok) {
     db.prepare("UPDATE sms_outbox SET status = 'sent', twilio_sid = ? WHERE job_id = ? AND kind = 'result'").run(sent.sid, jobId);
-    addEvent(db, jobId, now, "SMS", `Texted the ${job.report ? job.report.mode.toUpperCase() + " result" : "failure"} to ${maskPhone(sj.phone)}.`);
+    addEvent(db, jobId, now, "SMS", sj.phone.startsWith("+999") ? "SIMULATED SMS result recorded. No carrier message was sent." : `Texted the ${job.report ? job.report.mode.toUpperCase() + " result" : "failure"} to ${maskPhone(sj.phone)}.`);
     return "sent";
   }
   db.prepare("UPDATE sms_outbox SET status = 'failed', error = ? WHERE job_id = ? AND kind = 'result'").run(`${sent.code}: ${sent.message}`, jobId);

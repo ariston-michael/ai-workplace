@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Link = { id: string; phone: string; linkedAt: number };
-type Sms = { configured: boolean; number: string | null; links: Link[]; code: { code: string; expiresAt: number } | null };
+type Sms = { mode?: "simulated"; messages?: { id: string; body: string; at: number }[]; configured: boolean; number: string | null; links: Link[]; code: { code: string; expiresAt: number } | null };
 
 const clockNow = () => Date.now();
 const prettyNumber = (n: string) => n.startsWith("+1") && n.length === 12 ? `+1 (${n.slice(2, 5)}) ${n.slice(5, 8)}-${n.slice(8)}` : n;
@@ -14,6 +14,8 @@ export default function SmsPanel({ workspaceId }: { workspaceId: string }) {
   const [sms, setSms] = useState<Sms | null>(null);
   const [code, setCode] = useState<Sms["code"]>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const [now, setNow] = useState(clockNow);
 
   useEffect(() => {
@@ -21,6 +23,27 @@ export default function SmsPanel({ workspaceId }: { workspaceId: string }) {
     fetch(base, { cache: "no-store" }).then(r => r.json()).then(r => { if (!cancelled && r.ok) setSms(r.sms); }).catch(() => {});
     return () => { cancelled = true; };
   }, [base]);
+
+  useEffect(() => {
+    if (sms?.mode !== "simulated") return;
+    const id = setInterval(() => {
+      if (!document.hidden) fetch(base, { cache: "no-store" }).then(r => r.json()).then(r => { if (r.ok) setSms(r.sms); }).catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, [base, sms?.mode]);
+
+  async function sendSimulated(event: React.FormEvent) {
+    event.preventDefault(); if (sending || !draft.trim()) return;
+    setSending(true); setError(null);
+    try {
+      const response = await fetch(`${base}/simulate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: draft, clientRequestId: crypto.randomUUID() }) });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error?.message ?? "Could not simulate text.");
+      setDraft("");
+      const status = await fetch(base, { cache: "no-store" }).then(r => r.json()); if (status.ok) setSms(status.sms);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not simulate text."); }
+    finally { setSending(false); }
+  }
 
   // While a code is showing, count down and watch for the phone to link.
   useEffect(() => {
@@ -45,6 +68,14 @@ export default function SmsPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   if (!sms) return null;
+  if (sms.mode === "simulated") return <section className="office-sms" aria-labelledby="sms-title">
+    <h3 id="sms-title" className="office-sectionLabel">SIMULATED SMS · TEXT THE DISPATCHER</h3>
+    <p className="office-finePrint">Demo only. Messages stay in this workspace; nothing is sent to a phone. Try a part request, then reply APPROVE followed by its job code.</p>
+    <form onSubmit={sendSimulated}><label htmlFor="sms-simulation">Simulated text</label><textarea id="sms-simulation" value={draft} onChange={event => setDraft(event.target.value)} required maxLength={500} disabled={sending} className="office-smsDraft" />
+      <button className="office-reset" type="submit" disabled={sending || !draft.trim()}>{sending ? "Sending…" : "Send simulated text"}</button></form>
+    {error && <p role="alert" className="office-errorText">{error}</p>}
+    <ul className="office-smsTranscript" aria-label="Simulated SMS replies">{sms.messages?.map(message => <li key={message.id}><strong>SIMULATED · Dispatcher</strong><p>{message.body}</p></li>)}</ul>
+  </section>;
   const left = code ? Math.max(0, Math.ceil((code.expiresAt - now) / 1000)) : 0;
   return (
     <section className="office-sms" aria-labelledby="sms-title">

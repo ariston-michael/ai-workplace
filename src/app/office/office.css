@@ -345,3 +345,8 @@
 .office-smsCode p { margin: 0 0 6px; }
 .office-smsCodeValue { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 22px !important; font-weight: 700; letter-spacing: 3px; color: #2e493e; }
 .office-smsJob strong { font-family: var(--font-geist-mono), ui-monospace, monospace; letter-spacing: 1px; }
+
+.office-smsDraft { display: block; width: 100%; min-height: 70px; margin: 8px 0; padding: 10px; border: 1px solid #aebfae; border-radius: 5px; font: inherit; font-size: 12px; resize: vertical; }
+.office-smsTranscript { list-style: none; margin: 15px 0 0; padding: 0; display: grid; gap: 10px; max-height: 300px; overflow: auto; font-size: 12px; }
+.office-smsTranscript li { padding: 10px; border-left: 3px solid #658c9a; background: #eef3f1; overflow-wrap: anywhere; }
+.office-smsTranscript p { margin: 5px 0 0; white-space: pre-line; line-height: 1.6; }

@@ -19,6 +19,7 @@ const E164 = /^\+[1-9]\d{7,14}$/;
 
 /** null until all four TWILIO_* settings are present: SMS is then off. */
 export function twilioConfig(env: Record<string, string | undefined> = process.env): TwilioConfig | null {
+  if (env.SMS_MODE === "simulated") return null;
   const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
   const authToken = env.TWILIO_AUTH_TOKEN?.trim();
   const phoneNumber = env.TWILIO_PHONE_NUMBER?.replace(/[\s()-]/g, "");
