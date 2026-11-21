@@ -42,3 +42,11 @@ export function characterTask(job?: JobView): string {
   if (job.status === "failed") return "No active task · last attempt failed";
   return "No active task";
 }
+
+export function inventoryVoice(job?: JobView): string {
+  if (job?.status === "queued") return "Your inventory audit is assigned. I’m ready to start.";
+  if (job?.status === "working") return "I’m checking your inventory against my configured thresholds.";
+  if (job?.status === "failed") return "I couldn’t finish that audit. The job notes explain what needs changing.";
+  if (job?.report) return "Your audit is ready. Each finding traces back to your submitted CSV.";
+  return "Give me an inventory CSV. I’ll find the low stock and calculate the restock.";
+}

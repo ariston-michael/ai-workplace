@@ -9,17 +9,20 @@
 //      workspace's hire or job.
 //   3  workspaces.owner_sub: the Auth0 user (sub) who owns the office.
 //      NULL = unowned (data from before sign-in existed); hidden until claimed.
-//   4  marketplace_listings: community agents published by users (global, not
-//      per workspace). hires gain a snapshot of the listing's character name,
-//      sprite, kind and publisher, so the hired character never changes.
+//   4  marketplace listings. Two variants exist (marketplace / marketplace-publishing
+//      branches); v5 detects which one it is upgrading.
+//   5  union of both v4s: community listings (sprite + optional inventory action),
+//      hires.snapshot (immutable listing copy), retention ('team' | 'job'),
+//      instructions, departures, hire_events history, and the 'local' report mode.
 
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { migrateV4toV5 } from "./migrate-v5.server.ts";
 
 export type Db = DatabaseSync;
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const DEFAULT_WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_NAME = "Default office";
 /** workspace_id used by schema v1 for all rows. */
@@ -224,6 +227,10 @@ export function migrate(db: Db, file: string, now = Date.now()) {
     if (version === 3) {
       migrateV3toV4(db);
       version = 4;
+    }
+    if (version === 4) {
+      migrateV4toV5(db);
+      version = 5;
     }
     db.prepare("INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(
       DEFAULT_WORKSPACE_ID,

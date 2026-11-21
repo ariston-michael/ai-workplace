@@ -21,7 +21,7 @@ export function readSavedJobs(file = defaultDbPath(), workspaceId: string | unde
     if (!workspace) return null;
     const jobs = db.prepare(`
       SELECT j.id, j.type, j.title, j.input, j.required_skill AS requiredSkill,
-        j.status, j.hire_id AS hireId, h.role AS hireRole,
+        j.status, j.hire_id AS hireId, h.role AS hireRole, json_extract(h.snapshot, '$.characterName') AS hireName,
         j.recommended_profile_id AS recommendedProfileId, j.created_at AS createdAt,
         j.assigned_at AS assignedAt, j.started_at AS startedAt, j.finished_at AS finishedAt, j.error
       FROM jobs j LEFT JOIN hires h ON h.id = j.hire_id

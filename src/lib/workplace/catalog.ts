@@ -2,16 +2,17 @@
 // Marketplace profiles are product data; a workspace *hire* (stored in SQLite)
 // snapshots the profile's role, skills and rate at hire time.
 
-export type SkillId = "supplier_research" | "camera_diagnostics" | "visual_inspection" | "catalog_search";
+export type SkillId = "supplier_research" | "camera_diagnostics" | "visual_inspection" | "catalog_search" | "inventory_audit";
 
 export const SKILLS: Record<SkillId, string> = {
   supplier_research: "Supplier research",
   camera_diagnostics: "Camera feed diagnostics",
   visual_inspection: "Visual inspection",
   catalog_search: "Internal catalog search",
+  inventory_audit: "Inventory audit",
 };
 
-export type JobType = "supplier_lookup" | "camera_incident";
+export type JobType = "supplier_lookup" | "camera_incident" | "inventory_audit";
 
 export interface JobTypeInfo {
   label: string;
@@ -21,6 +22,7 @@ export interface JobTypeInfo {
 }
 
 export const JOB_TYPES: Record<JobType, JobTypeInfo> = {
+  inventory_audit: { label: "Audit inventory CSV", requiredSkill: "inventory_audit", posting: { deliverable: "Low-stock evidence and calculated restock quantities.", allowedSources: "Only the CSV submitted to this job; executed locally.", needsApproval: "Hiring the worker and submitting the inventory CSV." } },
   supplier_lookup: {
     label: "Find a replacement part",
     requiredSkill: "supplier_research",

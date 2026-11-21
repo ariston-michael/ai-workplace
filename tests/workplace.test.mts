@@ -88,7 +88,7 @@ test("missing skill: Dispatcher recommends a qualified marketplace worker and wa
 
 test("approving the hire resumes the original job automatically and produces a SAMPLE report", async () => {
   const { jobId } = submitPart();
-  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId });
+  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId, retention: "team" });
   assert.ok(hire.ok);
   assert.equal(hire.created, true);
   assert.deepEqual(hire.runJobIds, [jobId]);
@@ -115,7 +115,7 @@ test("approving the hire resumes the original job automatically and produces a S
 
 test("a second procurement job reuses the hired worker without another hire", async () => {
   const first = submitPart();
-  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: first.jobId });
+  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: first.jobId, retention: "team" });
   assert.ok(hire.ok);
   for (const id of hire.runJobIds) await runJob(db, deps, id);
 
@@ -136,8 +136,8 @@ test("a second procurement job reuses the hired worker without another hire", as
 
 test("repeated hire clicks produce a single hire and a single run", async () => {
   const { jobId } = submitPart();
-  const a = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId });
-  const b = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId });
+  const a = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId, retention: "team" });
+  const b = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId, retention: "team" });
   assert.ok(a.ok && b.ok);
   assert.equal(a.hireId, b.hireId);
   assert.equal(b.created, false);
@@ -158,14 +158,14 @@ test("resubmitting with the same clientRequestId returns the original job", () =
 test("hiring for one job also resumes other jobs waiting on the same skill", () => {
   const a = submitPart("Part A1");
   const b = submitPart("Part B1", "sparkfun");
-  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: a.jobId });
+  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: a.jobId, retention: "team" });
   assert.ok(hire.ok);
   assert.deepEqual(hire.runJobIds, [a.jobId, b.jobId]);
 });
 
 test("an unqualified worker cannot be hired for the job", () => {
   const { jobId } = submitPart();
-  const r = approveHire(db, deps, WS, { profileId: "catalog_assistant", jobId });
+  const r = approveHire(db, deps, WS, { profileId: "catalog_assistant", jobId, retention: "team" });
   assert.equal(!r.ok && r.error.code, "NOT_QUALIFIED");
   assert.equal(state().team.length, 1);
 });
@@ -244,7 +244,7 @@ test("provider errors mark the job failed with the error code", async () => {
     lookup: async () => ({ ok: false, error: { code: "PROVIDER_ERROR", message: "boom" } }),
   };
   const { jobId } = submitPart();
-  approveHire(db, failing, WS, { profileId: "procurement_researcher", jobId });
+  approveHire(db, failing, WS, { profileId: "procurement_researcher", jobId, retention: "team" });
   await runJob(db, failing, jobId);
   const j = job(jobId);
   assert.equal(j.status, "failed");
@@ -254,7 +254,7 @@ test("provider errors mark the job failed with the error code", async () => {
 
 test("team, jobs and reports survive reopening the database file", async () => {
   const { jobId } = submitPart();
-  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId });
+  const hire = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId, retention: "team" });
   assert.ok(hire.ok);
   await runJob(db, deps, jobId);
   db.close();
@@ -281,7 +281,7 @@ test("stale working jobs are failed; queued jobs are returned for rescheduling",
 
 test("reset clears hires, jobs and reports and reseeds staff", async () => {
   const { jobId } = submitPart();
-  approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId });
+  approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId, retention: "team" });
   await runJob(db, deps, jobId);
   resetWorkspace(db, WS, clock);
   const s = state();
@@ -320,9 +320,9 @@ test("clear request: matched to supplier research, recommends a hire, approving 
   assert.equal(j.recommendedProfileId, "procurement_researcher");
   assert.equal(j.input.request, "Find a Raspberry Pi 5 4GB on Adafruit");
   assert.ok(j.events.some((e) => e.actor === "You" && e.text === "Find a Raspberry Pi 5 4GB on Adafruit"));
-  assert.ok(j.events.some((e) => /Understood as Supplier research: find “Raspberry Pi 5 4GB” on Adafruit/.test(e.text)));
+  assert.ok(j.events.some((e) => /Understood \(built-in rules\) as Supplier research: find “Raspberry Pi 5 4GB” on Adafruit/.test(e.text)));
 
-  const h = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: r.jobId });
+  const h = approveHire(db, deps, WS, { profileId: "procurement_researcher", jobId: r.jobId, retention: "team" });
   assert.ok(h.ok);
   for (const id of h.runJobIds) await runJob(db, deps, id);
   assert.equal(job(r.jobId).report?.mode, "sample");

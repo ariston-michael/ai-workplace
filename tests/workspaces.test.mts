@@ -60,7 +60,7 @@ function office(name: string) {
 async function hireProcurementVia(ws: string, part = "Raspberry Pi 5 4GB") {
   const j = submitRequest(db, deps, ws, { clientRequestId: rid(), request: `Find a ${part} on Adafruit` });
   assert.ok(j.ok && j.kind === "job", JSON.stringify(j));
-  const h = approveHire(db, deps, ws, { profileId: "procurement_researcher", jobId: j.jobId });
+  const h = approveHire(db, deps, ws, { profileId: "procurement_researcher", jobId: j.jobId, retention: "team" });
   assert.ok(h.ok);
   for (const id of h.runJobIds) await runJob(db, deps, id);
   return { jobId: j.jobId, hireId: h.hireId };
@@ -202,7 +202,7 @@ test("hiring a worker in one office leaves the other office untouched", async ()
   assert.equal(sj.status, "needs_worker");
   assert.equal(sj.recommendedProfileId, "procurement_researcher");
 
-  const sh = approveHire(db, deps, south, { profileId: "procurement_researcher", jobId: s.jobId });
+  const sh = approveHire(db, deps, south, { profileId: "procurement_researcher", jobId: s.jobId, retention: "team" });
   assert.ok(sh.ok && sh.created);
   assert.notEqual(sh.hireId, hireId, "each office gets its own hire");
   assert.equal(state(south).team.find((h) => h.id === sh.hireId)?.desk, "desk-02", "desks are per office");
@@ -261,7 +261,7 @@ test("a job from one office cannot be approved from another", () => {
   const b = office("B office");
   const j = submitRequest(db, deps, a, { clientRequestId: rid(), request: "Find a Raspberry Pi 5 4GB on Adafruit" });
   assert.ok(j.ok && j.kind === "job");
-  const r = approveHire(db, deps, b, { profileId: "procurement_researcher", jobId: j.jobId });
+  const r = approveHire(db, deps, b, { profileId: "procurement_researcher", jobId: j.jobId, retention: "team" });
   assert.equal(!r.ok && r.error.code, "JOB_NOT_FOUND");
   assert.equal(state(b).team.length, 1, "no hire created in B");
   assert.equal(state(a).jobs[0].status, "needs_worker", "A's job untouched");
@@ -325,7 +325,7 @@ test("the database rejects cross-office references", async () => {
     "a report cannot be filed under another office",
   );
   assert.throws(
-    () => db.prepare("INSERT INTO hires (id, workspace_id, profile_id, role, skills, source, desk, hired_at) VALUES ('h', 'nowhere', 'p', 'r', '[]', 'staff', 'd', 0)").run(),
+    () => db.prepare("INSERT INTO hires (id, workspace_id, profile_id, role, skills, source, desk, hired_at, snapshot, retention) VALUES ('h', 'nowhere', 'p', 'r', '[]', 'staff', 'd', 0, '{}', 'team')").run(),
     /FOREIGN KEY/,
   );
 });

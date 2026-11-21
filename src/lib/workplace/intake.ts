@@ -8,7 +8,7 @@ import { SUPPLIERS } from "../procurement.ts";
 export const REQUEST_MAX = 500;
 export const STATION = "Packing Station 1";
 
-export type Missing = "job_type" | "part_name" | "supplier" | "camera_problem";
+export type Missing = "job_type" | "part_name" | "supplier" | "camera_problem" | "inventory_csv";
 
 export interface TranscriptLine {
   actor: "You" | "Dispatcher";
@@ -42,12 +42,28 @@ export type Interpretation =
       understood: string;
       transcript: TranscriptLine[];
     }
+  | {
+      kind: "ready";
+      jobType: "inventory_audit";
+      /** The CSV itself is attached by the service from the request body; it is never part of intake. */
+      input: Record<string, never>;
+      original: string;
+      understood: string;
+      transcript: TranscriptLine[];
+    }
   | { kind: "follow_up"; question: string; pending: PendingRequest }
   | { kind: "unsupported"; message: string; skill: SkillId | null }
   | { kind: "invalid"; message: string };
 
 export const SUPPORTED_SUMMARY =
-  "finding a replacement part on an approved supplier site (Adafruit, SparkFun or Digi-Key), or diagnosing a stopped camera feed at Packing Station 1";
+  "finding a replacement part on an approved supplier site (Adafruit, SparkFun or Digi-Key), diagnosing a stopped camera feed at Packing Station 1, or auditing an inventory CSV for low stock";
+
+export interface IntakeOptions {
+  /** True when the request carries an inventory CSV attachment. */
+  csvAttached?: boolean;
+}
+
+export const CSV_QUESTION = "Attach the inventory CSV (header sku,quantity) and send it. It stays private to this office.";
 
 // ---------------------------------------------------------------------------
 // Signals
@@ -64,7 +80,8 @@ const CAMERA_PROBLEM =
   /\b(stopped|stops|stop|down|not working|isn'?t working|is not working|broken|dead|black|frozen|freez\w*|offline|disconnected|lost|blank|failing|failed|went out|no (?:video|image|picture|frames?|feed|signal))\b/i;
 const PURCHASE_STRONG = /\b(buy|order|purchase|source|sourcing|reorder|restock|quote|price|pricing|supplier|suppliers|vendor)\b/i;
 const PURCHASE_WEAK = /\b(replacement|replace|spare|in stock|stock|availability|available|find|look up|lookup|look for|search for|where can i get|need a new|new one)\b/i;
-const CATALOG = /\b(internal catalog|our catalog|catalog|internal records?|our records|part numbers?|inventory|warehouse records?|bin location)\b/i;
+const CATALOG = /\b(internal catalog|our catalog|catalog|internal records?|our records|part numbers?|warehouse records?|bin location)\b/i;
+const INVENTORY = /\b(inventory|stock (?:levels?|counts?|sheet|list)|low[- ]stock|restock (?:plan|quantities|amounts)|csv)\b/i;
 
 const VAGUE_WORDS = new Set(
   (
@@ -82,7 +99,7 @@ function detectSupplier(text: string): string | undefined {
   return SUPPLIER_PATTERNS.find((s) => s.re.test(text))?.id;
 }
 
-function supplierName(id: string): string {
+export function supplierName(id: string): string {
   return SUPPLIERS.find((s) => s.id === id)?.name ?? id;
 }
 
@@ -166,13 +183,13 @@ const CAMERA_OR_PART_QUESTION =
 // Interpret
 // ---------------------------------------------------------------------------
 
-function clean(text: unknown): string | null {
+export function clean(text: unknown): string | null {
   if (typeof text !== "string") return null;
   const t = text.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   return t.length ? t.slice(0, REQUEST_MAX) : null;
 }
 
-function supplierOutcome(
+export function supplierOutcome(
   original: string,
   transcript: TranscriptLine[],
   partName: string | undefined,
@@ -206,7 +223,7 @@ function supplierOutcome(
   };
 }
 
-function cameraReady(original: string, transcript: TranscriptLine[]): Interpretation {
+export function cameraReady(original: string, transcript: TranscriptLine[]): Interpretation {
   return {
     kind: "ready",
     jobType: "camera_incident",
@@ -217,8 +234,29 @@ function cameraReady(original: string, transcript: TranscriptLine[]): Interpreta
   };
 }
 
-function interpretFresh(text: string, original: string, transcript: TranscriptLine[]): Interpretation {
+export function inventoryOutcome(original: string, transcript: TranscriptLine[], csvAttached: boolean): Interpretation {
+  if (!csvAttached) {
+    return {
+      kind: "follow_up",
+      question: CSV_QUESTION,
+      pending: { original, jobType: "inventory_audit", missing: ["inventory_csv"], transcript: [...transcript, { actor: "Dispatcher", text: CSV_QUESTION }] },
+    };
+  }
+  return {
+    kind: "ready",
+    jobType: "inventory_audit",
+    input: {},
+    original,
+    understood: `${SKILLS.inventory_audit}: find low stock in the attached CSV and calculate restock quantities.`,
+    transcript,
+  };
+}
+
+function interpretFresh(text: string, original: string, transcript: TranscriptLine[], csvAttached = false): Interpretation {
   const supplierId = detectSupplier(text);
+  if ((INVENTORY.test(text) || csvAttached) && !supplierId && !(CAMERA_NOUN.test(text) && CAMERA_PROBLEM.test(text))) {
+    return inventoryOutcome(original, transcript, csvAttached);
+  }
   const cameraNoun = CAMERA_NOUN.test(text);
   const cameraProblem = cameraNoun && CAMERA_PROBLEM.test(text);
   const purchaseStrong = PURCHASE_STRONG.test(text) || supplierId !== undefined;
@@ -273,12 +311,12 @@ function interpretFresh(text: string, original: string, transcript: TranscriptLi
   };
 }
 
-function validPending(p: unknown): PendingRequest | null {
+export function validPending(p: unknown): PendingRequest | null {
   if (typeof p !== "object" || p === null) return null;
   const r = p as Record<string, unknown>;
   const original = clean(r.original);
   if (!original) return null;
-  const jobType = r.jobType === "supplier_lookup" || r.jobType === "camera_incident" ? r.jobType : null;
+  const jobType = r.jobType === "supplier_lookup" || r.jobType === "camera_incident" || r.jobType === "inventory_audit" ? r.jobType : null;
   const transcript = Array.isArray(r.transcript)
     ? r.transcript
         .slice(-12)
@@ -295,8 +333,10 @@ function validPending(p: unknown): PendingRequest | null {
  * Interpret a new request, or an answer to a follow-up when `pendingRaw` is given.
  * The pending object comes from the client, so every field is re-validated.
  */
-export function interpretRequest(textRaw: unknown, pendingRaw?: unknown): Interpretation {
-  const text = clean(textRaw);
+export function interpretRequest(textRaw: unknown, pendingRaw?: unknown, options: IntakeOptions = {}): Interpretation {
+  const csvAttached = options.csvAttached === true;
+  // A CSV with no words is still a clear inventory request.
+  const text = clean(textRaw) ?? (csvAttached ? "Audit the attached inventory CSV." : null);
   if (!text) return { kind: "invalid", message: "Tell the Dispatcher what you need help with." };
 
   const pending = pendingRaw === undefined || pendingRaw === null ? null : validPending(pendingRaw);
@@ -305,7 +345,7 @@ export function interpretRequest(textRaw: unknown, pendingRaw?: unknown): Interp
   }
 
   if (!pending) {
-    return interpretFresh(text, text, [{ actor: "You", text }]);
+    return interpretFresh(text, text, [{ actor: "You", text }], csvAttached);
   }
 
   const transcript: TranscriptLine[] = [...pending.transcript, { actor: "You", text }];
@@ -322,6 +362,7 @@ export function interpretRequest(textRaw: unknown, pendingRaw?: unknown): Interp
   }
 
   if (pending.jobType === "camera_incident") return cameraReady(pending.original, transcript);
+  if (pending.jobType === "inventory_audit") return inventoryOutcome(pending.original, transcript, csvAttached);
 
   // Job type was unclear. "Diagnose it" about a camera mentioned earlier means the camera job.
   const aboutCamera = CAMERA_NOUN.test(text) || CAMERA_NOUN.test(pending.original);
@@ -329,9 +370,9 @@ export function interpretRequest(textRaw: unknown, pendingRaw?: unknown): Interp
     return cameraReady(pending.original, transcript);
   }
   // Otherwise read the answer on its own first, then together with the original request.
-  const answerOnly = interpretFresh(text, pending.original, transcript);
+  const answerOnly = interpretFresh(text, pending.original, transcript, csvAttached);
   if (answerOnly.kind === "ready" || (answerOnly.kind === "follow_up" && answerOnly.pending.jobType !== null)) return answerOnly;
-  const combined = interpretFresh(`${pending.original} ${text}`, pending.original, transcript);
+  const combined = interpretFresh(`${pending.original} ${text}`, pending.original, transcript, csvAttached);
   if (combined.kind === "ready" || (combined.kind === "follow_up" && combined.pending.jobType !== null)) return combined;
   return answerOnly;
 }

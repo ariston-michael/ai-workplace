@@ -16,7 +16,9 @@ For anyone building UI on top of the workplace service (e.g. the office UI). Sou
 - **Workspace** = one office. Every hire, job, job event, report and simulator setting belongs to exactly one workspace. Hiring, resetting or changing settings in one workspace never touches another.
 - **`default`** holds the data migrated from before multi-workspace support. It belongs to the demo owner once claimed.
 - The `/office` page selects a workspace with `?workspace=<id>`. Without it, `/office` opens the user's **primary** office (their `default` office if they own it, else their oldest office).
-- Procurement runs on a **SAMPLE fixture** unless the server has `PROCUREMENT_MODE=live`. Camera jobs are always **SIMULATED**. Reports carry `mode` so the UI can label them: `live` | `sample` | `simulated`.
+- Procurement runs on a **SAMPLE fixture** unless the server has `PROCUREMENT_MODE=live`. Camera jobs are always **SIMULATED**. Inventory audits are **EXECUTED LOCALLY** on the CSV the hirer submits. Reports carry `mode` so the UI can label them: `live` | `sample` | `simulated` | `local`.
+- **Dispatcher engine.** With `GEMINI_API_KEY` set on the server, Gemini (`GEMINI_MODEL`, default `gemini-3.5-flash-lite`) interprets requests; otherwise built-in keyword rules do. Gemini only proposes the job type, part, supplier and follow-up wording; the server re-checks all of it. Gemini never chooses workers, hires, rates or permissions, and never receives inventory CSV contents (only whether one is attached). If Gemini fails, the rules answer and the response says why (`dispatcher.fallback`). See [src/lib/workplace/dispatcher-ai.server.ts](../src/lib/workplace/dispatcher-ai.server.ts).
+- **Retention.** Each marketplace hire is either **kept on the team** (`retention: "team"`) or hired **for one job** (`"job"`). The Dispatcher reuses a qualified *kept* worker first. Approving a recommendation defaults to **For this job**; hiring from a vacant desk or the marketplace without a job keeps the worker. When a job finishes, the demo meter stops, the report is saved and the worker returns to reception; a job-only worker then leaves (its desk frees up), a kept worker returns to its desk. A departed hire's jobs and reports stay in workflow history.
 
 ## Routes
 
@@ -27,8 +29,10 @@ All bodies are JSON. Errors are always `{ ok: false, error: { code, message } }`
 | GET | `/api/workspaces` | — | `{ ok, viewer: { name, email }, primaryWorkspaceId, workspaces: WorkspaceSummary[] }` (only the caller's offices) |
 | POST | `/api/workspaces` | `{ name }` (1–60 chars) | `201 { ok, workspace: WorkspaceSummary }` (owned by the caller) |
 | GET | `/api/workspaces/{id}` | — | `{ ok, state: WorkplaceState }` |
-| POST | `/api/workspaces/{id}/jobs` | `{ clientRequestId, request, pending? }` | see **Submitting a request** |
-| POST | `/api/workspaces/{id}/hires` | `{ profileId, jobId? }` | `{ ok, hireId, created, state }` |
+| POST | `/api/workspaces/{id}/jobs` | `{ clientRequestId, request, pending?, csv? }` | see **Submitting a request** |
+| POST | `/api/workspaces/{id}/hires` | `{ profileId, jobId?, retention?, instructions? }` | `{ ok, hireId, created, state }` |
+| POST | `/api/workspaces/{id}/hires/{hireId}` | `{ retention?: "team" \| "job", instructions? }` | `{ ok, hireId, state }`: keep on team, release, or save instructions |
+| POST | `/api/workspaces/{id}/agents/{hireId}/jobs` | `{ clientRequestId, csv }` | `{ ok, jobId, state }`: run a kept inventory worker's audit directly |
 | POST | `/api/workspaces/{id}/simulator` | `{ cameraFault }` | `{ ok, state }` |
 | POST | `/api/workspaces/{id}/reset` | — | `{ ok, state }` |
 | GET | `/api/marketplace` | — | `{ ok, listings: MarketplaceListing[], workspaces: HireTarget[], viewer: { name, suggestedPublisherName } }` |
@@ -40,7 +44,7 @@ Legacy aliases (same handlers and checks, applied to the **caller's primary offi
 
 ### Submitting a request (`POST …/jobs`)
 
-`request` is the user's free text ("What do you need help with?"). The Dispatcher replies with one of:
+`request` is the user's free text ("What do you need help with?"). `csv` (optional, ≤ 50,000 chars, header `sku,quantity`) attaches a private inventory file; it is stored only on the job and never sent to Gemini. Every reply includes `dispatcher: { engine: "gemini" | "rules", model, fallback }`. The Dispatcher replies with one of:
 
 | `kind` | Meaning | Response | UI should |
 |---|---|---|---|
@@ -53,9 +57,11 @@ Legacy aliases (same handlers and checks, applied to the **caller's primary offi
 
 ### Hiring (`POST …/hires`)
 
-- With `jobId`: approves the Dispatcher's recommendation for a `needs_worker` job. The worker is seated and **every** `needs_worker` job in that workspace needing that skill resumes automatically.
-- Without `jobId`: hire directly from the marketplace (vacant desk).
-- Idempotent: hiring an already-hired profile returns the existing `hireId` with `created: false` and starts nothing new.
+- With `jobId`: approves a hire for a `needs_worker` job. `retention` defaults to `"job"`: the worker takes only that job, then leaves. With `"team"` the worker is kept, and **every** `needs_worker` job in the workspace needing its skills resumes.
+- Without `jobId`: hire directly (vacant desk or marketplace). `retention` must be `"team"` (the default).
+- `instructions` (≤ 1000 chars) are saved with the hire, shown in every job brief for it, and recorded in its history.
+- Idempotent: approving the same job twice returns the worker already on it; hiring a listing already kept on the team returns that `hireId` with `created: false`. Two job-only copies of a listing may work at once; only one can be kept on the team (`409 ALREADY_ON_TEAM`).
+- **Keep on team** later (while the job is queued or running): `POST …/hires/{hireId}` with `{ retention: "team" }`. **Release** a kept worker with `{ retention: "job" }`: it leaves now if idle, otherwise after its current report. Staff cannot be released.
 - `profileId` is any `MarketplaceListing.id`: the official `procurement_researcher` and `catalog_assistant`, or a community id `community-<slug>-<suffix>`. A community agent can be approved for a held job if it has the job's skill (the user may pick it over the Dispatcher's recommendation).
 - The hire **snapshots** the listing's `characterName`, `sprite`, `kind` and publisher name, as well as role, skills and rate. The office always draws the hire from that snapshot, so the character from the marketplace is the one that walks in.
 
@@ -88,6 +94,9 @@ Listings are global (every signed-in user sees the same list). Hiring still goes
 | `sampleWork` | 10–200 chars |
 | `publisherName` | 1–40 chars, shown on the listing. "AI Workplace" is reserved. |
 | `sprite` | `CustomSprite` (below); `kind: "cast"` is rejected |
+| `actionConfig` | required when `skills` include `inventory_audit`: `{ minimumQuantity, targetQuantity }`, integers, `1 ≤ minimum ≤ target ≤ 100000` |
+
+Submitting any of `official`, `verified`, `kind`, `publisherKind`, `publisher`, `creator`, `creatorSub`, `creatorName`, `badge`, `permissions` or `id` is rejected: the badge, kind, creator identity and permissions are set by the server.
 
 Whitespace is collapsed. Errors answer `400 INVALID_LISTING` with `error.fields: { [field]: message }` for inline display. Each user can publish up to 12 listings (`409 LISTING_LIMIT`). There is no edit or unpublish route yet; existing hires keep their snapshot regardless.
 
@@ -116,9 +125,11 @@ Jobs run after the response is sent. While any job is `queued` or `working`, pol
 | `workspace` | `{ id, name }` | |
 | `workspaceId` | string | same as `workspace.id` (kept for older callers) |
 | `procurementMode` | `"sample" \| "live"` | show a SAMPLE / LIVE badge |
-| `team` | `HireView[]` | ordered by hire time |
+| `dispatcher` | `{ engine: "gemini" \| "rules", model }` | show a Dispatcher badge |
+| `team` | `HireView[]` | workers in the office now, ordered by hire time |
+| `formerHires` | `HireView[]` | workers who left (newest first, max 20); animate their exit, keep their reports reachable |
 | `jobs` | `JobView[]` | newest first, max 50 |
-| `marketplace` | `(WorkerProfile & { hired: boolean })[]` | `hired` is per workspace |
+| `marketplace` | `(MarketplaceListing & { hired: boolean })[]` | `hired` = kept on this team |
 | `simulator` | `{ cameraFault: string }` | |
 
 ### `MarketplaceListing`
@@ -133,6 +144,7 @@ Everything in `WorkerProfile` (`id`, `role`, `initials`, `color`, `specialty`, `
 | `sprite` | `SpriteSpec` | render with `<PixelCharacter sprite={…} />` |
 | `publisher` | `{ name, isYou }` | official = "AI Workplace". The publisher's Auth0 `sub` is never sent. |
 | `publishedAt` | number \| null | null for official |
+| `actionConfig` | `{ minimumQuantity, targetQuantity } \| null` | inventory audit thresholds |
 
 `permissions` are derived on the server from `skills` (same text for official and community); publishers cannot set them. In `WorkplaceState.marketplace` each listing also has `hired` (per workspace).
 
@@ -144,7 +156,7 @@ Everything in `WorkerProfile` (`id`, `role`, `initials`, `color`, `specialty`, `
 `{ id, name, openDesks, hiredListingIds }` for each of the caller's offices. Disable a row when the listing is already hired there or `openDesks` is 0.
 
 ### `HireView`
-`id`, `profileId`, `role`, `characterName`, `sprite: SpriteSpec`, `listingKind: "official"|"community"|null` (null = staff), `publisherName: string|null`, `initials`, `color` (`coral|sage|gold|blue`), `specialty`, `skills: SkillId[]`, `hourlyRateCents: number|null` (null = staff, not billed), `source: "staff"|"marketplace"`, `desk: "workstation-01"|"desk-02"|"desk-03"`, `hiredAt`, `activeJobId: string|null`, `completedJobs: number`.
+Character, sprite, rate, permissions, greeting and `actionConfig` come from the hire's saved snapshot of its listing and never change after hiring. Fields: `id`, `profileId`, `role`, `characterName`, `greeting`, `permissions: string[]`, `actionConfig`, `retention: "team"|"job"`, `jobId` (the job it was hired for), `instructions`, `departedAt: number|null`, `history: { at, kind, text, jobId }[]` (kinds: `hired`, `instructions`, `assigned`, `kept`, `released`, `returned`, `at_desk`, `departed`), `sprite: SpriteSpec`, `listingKind: "official"|"community"|null` (null = staff), `publisherName: string|null`, `initials`, `color` (`coral|sage|gold|blue`), `specialty`, `skills: SkillId[]`, `hourlyRateCents: number|null` (null = staff, not billed), `source: "staff"|"marketplace"`, `desk: "workstation-01"|"desk-02"|"desk-03"`, `hiredAt`, `activeJobId: string|null`, `completedJobs: number`.
 
 Desks are per workspace: every office has its own Workstation 01 (Quality Inspector), Desk 02 and Desk 03.
 
@@ -152,26 +164,27 @@ Desks are per workspace: every office has its own Workstation 01 (Quality Inspec
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | |
-| `type` | `"supplier_lookup" \| "camera_incident"` | |
+| `type` | `"supplier_lookup" \| "camera_incident" \| "inventory_audit"` | |
 | `title` | string | camera titles never reveal the simulated fault |
-| `input` | supplier: `{ partName, supplierId, supplierName, request? }`; camera: `{ station, request? }` | `request` = user's original words |
+| `input` | supplier: `{ partName, supplierId, supplierName, request? }`; camera: `{ station, request? }`; inventory: `{ csv, request? }` | `request` = user's original words; `csv` is private to the office |
 | `requiredSkill` | `SkillId` | |
 | `status` | `"needs_worker" \| "queued" \| "working" \| "completed" \| "failed"` | |
-| `hireId` / `hireRole` | string \| null | assigned worker |
+| `hireId` / `hireRole` / `hireName` | string \| null | assigned worker (kept after it leaves) |
 | `recommendedProfileId` | string \| null | set while `needs_worker` |
 | `createdAt`, `assignedAt`, `startedAt`, `finishedAt` | number \| null | ms |
 | `error` | `{ code, message } \| null` | when `failed` |
 | `events` | `{ at, actor, text }[]` | full history incl. the request conversation |
 | `report` | `ReportView \| null` | when `completed` |
 
-`working` means the worker has left its desk (animate departure); a report arriving means it returned.
+`working` means the worker has left its desk (animate departure); a report arriving means it returned to reception. Then a kept worker walks back to its desk and a job-only worker (`formerHires`, `departedAt` set) walks out. The demo meter runs from `startedAt` until `finishedAt`; the saved charge is `report.demoCostCents` (failed runs are not billed). Job events record "Execution finished. Demo meter stopped at …" and "Left the office …".
 
 ### `ReportView`
-`id`, `mode: "live"|"sample"|"simulated"`, `outcome: "found"|"close"|"ambiguous"|"not_found"|"resolved"|"incident_open"`, `summary`, `runtimeMs`, `hourlyRateCents` (snapshot), `demoCostCents` (per-second demo charge, null for staff; not billed), `createdAt`, `body`:
+`id`, `mode: "live"|"sample"|"simulated"|"local"`, `outcome: "found"|"close"|"ambiguous"|"not_found"|"resolved"|"incident_open"|"audited"`, `summary`, `runtimeMs`, `hourlyRateCents` (snapshot), `demoCostCents` (per-second demo charge, null for staff; not billed), `createdAt`, `body`:
 - `{ type: "supplier_lookup", result: LookupResult }`: item name, availability (+ verbatim text), `sourceUrl` (always on the supplier's domain), `candidates`, `uncertainties`.
+- `{ type: "inventory_audit", result: InventoryAuditResult, listingName }`: input SHA-256, thresholds, per-row findings with CSV line numbers, totals. Visible only to the office owner, never to the listing's publisher.
 - `{ type: "camera_incident", incident: Incident, simulatorFault }`: observations, actions, timeline. `incident.status` stays `open` until a fresh frame arrives (`outcome: "incident_open"`). `simulatorFault` is for the operator only.
 
-`SkillId`: `supplier_research`, `camera_diagnostics`, `visual_inspection`, `catalog_search`.
+`SkillId`: `supplier_research`, `camera_diagnostics`, `visual_inspection`, `catalog_search`, `inventory_audit`.
 
 ## Error codes
 
@@ -188,20 +201,29 @@ Desks are per workspace: every office has its own Workstation 01 (Quality Inspec
 | `UNKNOWN_FAULT` | 400 | bad `cameraFault` |
 | `UNKNOWN_SUPPLIER` | 400 | supplier not on the approved list |
 | `INVALID_LISTING` | 400 | publish form invalid; see `error.fields` |
+| `INVALID_INPUT` | 400 | inventory CSV missing or too long |
+| `INVALID_INSTRUCTIONS` | 400 | instructions not text of ≤ 1000 chars |
+| `HIRE_NOT_FOUND` | 404 | hire not in this workspace |
+| `HIRE_DEPARTED` | 409 | the worker already left |
+| `ALREADY_ON_TEAM` | 409 | another copy of this listing is already kept on the team |
+| `STAFF_RETAINED` | 400 | built-in staff cannot be released |
+| `HIRED_FOR_ONE_JOB` | 409 | direct work sent to a job-only worker |
+| `UNSUPPORTED_ACTION` | 400 | worker has no inventory action |
 | `LISTING_LIMIT` | 409 | publisher already has 12 listings |
 
-## Database (schema v4, `PRAGMA user_version = 4`)
+## Database (schema v5, `PRAGMA user_version = 5`)
 
-File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Opening an older file migrates it automatically after writing `<file>.v<old version>-backup-<timestamp>`.
+File: `data/workplace.db` (gitignored; override with `WORKPLACE_DB_PATH`). Opening an older file migrates it automatically after writing `<file>.v<old version>-backup-<timestamp>`. Both earlier v4 variants (the `marketplace` and `marketplace-publishing` branches) are detected and upgraded; see [src/lib/workplace/migrate-v5.server.ts](../src/lib/workplace/migrate-v5.server.ts).
 
 | Table | Key columns | Scoping |
 |---|---|---|
 | `workspaces` | `id` (slug), `name`, `created_at`, `owner_sub` (Auth0 `sub`; NULL = unclaimed) | owner |
-| `hires` | `id`, `workspace_id`, `profile_id`, `desk`, rate/skills snapshot, v4: `character_name`, `sprite`, `listing_kind`, `publisher_name` | FK → workspaces; unique per workspace: `profile_id`, `desk` |
+| `hires` | `id`, `workspace_id`, `profile_id`, `desk`, rate/skills, `snapshot` (JSON listing as hired), `retention`, `job_id`, `instructions`, `departed_at` | FK → workspaces; unique among *present* hires: `desk`; unique among *kept* hires: `profile_id` |
+| `hire_events` | `workspace_id`, `hire_id`, `job_id`, `at`, `kind`, `text` | FK `(workspace_id, hire_id)` → hires (cascade) |
 | `jobs` | `id`, `workspace_id`, `client_request_id`, `status`, `hire_id` | FK `(workspace_id, hire_id)` → hires: a job can only be assigned to its own workspace's hire |
 | `job_events` | `job_id`, `at`, `actor`, `text` | via job (cascade delete) |
-| `reports` | `id`, `workspace_id`, `job_id`, `hire_id`, `mode`, `outcome`, `body` | FK `(workspace_id, job_id)` → jobs and `(workspace_id, hire_id)` → hires |
-| `marketplace_listings` | `id` (`community-…`), `owner_sub`, `client_request_id`, `publisher_name`, `character_name`, `role`, `specialty`, `greeting`, `skills`, `hourly_rate_cents`, `sample_work`, `sprite`, `published_at` | global; unique `(owner_sub, client_request_id)` |
+| `reports` | `id`, `workspace_id`, `job_id`, `hire_id`, `mode` (incl. `local`), `outcome`, `body` | FK `(workspace_id, job_id)` → jobs and `(workspace_id, hire_id)` → hires |
+| `marketplace_listings` | `id`, `creator_sub`, `client_request_id`, `creator_name`, `character_name`, `role`, `description`, `greeting`, `sample_work`, `skills`, `hourly_rate_cents`, `action_config`, `sprite`, `published_at` | community only (official listings are code); unique `(creator_sub, client_request_id)` |
 | `simulator_settings` | `workspace_id` (PK), `camera_fault` | FK → workspaces |
 
-Reset deletes that workspace's reports, events, jobs, hires and simulator settings, then reseeds the Quality Inspector. There is no delete-workspace route yet.
+Reset deletes that workspace's reports, events, jobs, hire history, hires and simulator settings, then reseeds the Quality Inspector. There is no delete-workspace route yet.

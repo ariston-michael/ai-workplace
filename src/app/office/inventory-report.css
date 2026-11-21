@@ -1,0 +1,14 @@
+.inventory-report { margin: 18px 0; font-size: 12px; line-height: 1.7; min-width: 0; }
+.inventory-report h3 { font-size: 18px; margin: 12px 0; }
+.inventory-source { color: #285c60; font-size: 10px; letter-spacing: 1px; font-weight: 650; }
+.inventory-table { max-width: 100%; overflow-x: auto; margin: 16px 0; }
+.inventory-table table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; }
+.inventory-table caption { text-align: left; font-weight: 600; padding-bottom: 8px; }
+.inventory-table :is(th, td) { padding: 8px; border-bottom: 1px solid #dbe0d1; overflow-wrap: anywhere; }
+.inventory-table thead { background: #eef2e7; }
+.inventory-digest code { display: block; overflow-wrap: anywhere; font-size: 10px; }
+.office-actionForm { border: 1px solid #bfcec1; background: #eff4ec; padding: 16px; border-radius: 7px; margin: 22px 0; }
+.office-actionForm label { font-size: 12px; font-weight: 600; display: block; }
+.office-actionForm textarea { display: block; width: 100%; min-height: 120px; margin: 10px 0; border: 1px solid #b9c8b3; border-radius: 5px; padding: 10px; resize: vertical; font: 12px/1.6 monospace; color: #2d443e; background: #fffef8; }
+.office-actionForm textarea:focus-visible { outline: 3px solid #ad704c; outline-offset: 2px; }
+.office-modeBadge.office-mode-local { background: #dceeed; color: #275f65; border-color: #bad5d0; }

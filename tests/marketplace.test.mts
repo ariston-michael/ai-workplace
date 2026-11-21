@@ -4,7 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { SCHEMA_VERSION, openDb, type Db } from "../src/lib/workplace/db.server.ts";
+import { auditInventory } from "../src/lib/marketplace/inventory.server.ts";
+import { INVENTORY_PERMISSIONS } from "../src/lib/marketplace/types.ts";
+import { readSavedJobs } from "../src/lib/workflow/read-jobs.server.ts";
 import {
   approveHire,
   ensurePersonalWorkspace,
@@ -13,7 +17,9 @@ import {
   hireTargets,
   listMarketplace,
   publishListing,
+  listWorkspaces,
   runJob,
+  submitAgentJob,
   submitRequest,
   type ServiceDeps,
   type Viewer,
@@ -138,7 +144,7 @@ test("the Dispatcher recommends an official worker over a cheaper community one"
 
 // --- hiring a community agent ---------------------------------------------------
 
-test("hiring a community agent for a held job snapshots its sprite, resumes the job and runs it", async () => {
+test("hiring a community agent for a held job snapshots its sprite, runs the job, then leaves (job-only by default)", async () => {
   const listing = publish(bob);
   assert.ok(listing.ok);
   const ws = ensurePersonalWorkspace(db, deps, alice);
@@ -150,22 +156,26 @@ test("hiring a community agent for a held job snapshots its sprite, resumes the 
   const hire = approveHire(db, deps, ws, { profileId: listing.listing.id, jobId: sub.jobId });
   assert.ok(hire.ok && hire.created);
   assert.deepEqual(hire.runJobIds, [sub.jobId]);
+  const during = getState(db, ws, "sample", 0)!.team.find((h) => h.id === hire.hireId)!;
+  assert.deepEqual(during.sprite, sprite, "the exact marketplace character is on the team");
+  assert.equal(during.retention, "job");
   await runJob(db, deps, sub.jobId);
 
   const state = getState(db, ws, "sample", 0)!;
-  const juno = state.team.find((h) => h.id === hire.hireId)!;
-  assert.deepEqual(juno.sprite, sprite, "the exact marketplace character is on the team");
+  assert.equal(state.team.find((h) => h.id === hire.hireId), undefined, "a job-only worker leaves after its report");
+  const juno = state.formerHires.find((h) => h.id === hire.hireId)!;
+  assert.deepEqual(juno.sprite, sprite);
   assert.equal(juno.characterName, "Juno");
   assert.equal(juno.listingKind, "community");
   assert.equal(juno.publisherName, "Bob");
   assert.equal(state.jobs[0].status, "completed");
   assert.equal(state.jobs[0].report?.mode, "sample");
+  assert.equal(state.jobs[0].hireName, "Juno");
   assert.ok(state.jobs[0].events.some((e) => /Juno \(Parts Scout, community listing by Bob\)/.test(e.text)));
-  assert.ok(state.marketplace.find((l) => l.id === listing.listing.id)!.hired);
 
   // The snapshot does not follow later changes to the listing row.
   db.prepare("UPDATE marketplace_listings SET sprite = ?, character_name = 'Changed' WHERE id = ?").run(JSON.stringify(spriteFromSeed(1)), listing.listing.id);
-  const later = getState(db, ws, "sample", 0)!.team.find((h) => h.id === hire.hireId)!;
+  const later = getState(db, ws, "sample", 0)!.formerHires.find((h) => h.id === hire.hireId)!;
   assert.deepEqual(later.sprite, sprite);
   assert.equal(later.characterName, "Juno");
 });
@@ -215,27 +225,168 @@ test("hire targets list only the caller's offices with open desks and current hi
   assert.equal(hireTargets(db, bob.sub)[0].openDesks, 2, "Bob's office is untouched");
 });
 
+// --- inventory audit action (from marketplace-publishing) -----------------------------
+
+const inventoryDraft = (over: Record<string, unknown> = {}) => draft({
+  characterName: "Shelf Scout", role: "Shelf Scout", specialty: "Audits the inventory CSV supplied by its hirer.",
+  skills: ["inventory_audit"], hourlyRateCents: 650, sampleWork: "Runs an inventory audit on the CSV you submit.",
+  publisherName: "Alice", actionConfig: { minimumQuantity: 5, targetQuantity: 12 }, ...over,
+});
+const CSV = "sku,quantity\nBOB-PRIVATE-BOLT,3\nMOTOR,14\nWASHER,0";
+
+test("an inventory agent is published with its thresholds and fixed permissions; spoofed badges and identity are rejected", () => {
+  const r = publishListing(db, deps, alice.sub, { clientRequestId: "publish-scout-1", listing: inventoryDraft() });
+  assert.ok(r.ok);
+  assert.deepEqual(r.listing.actionConfig, { minimumQuantity: 5, targetQuantity: 12 });
+  assert.deepEqual(r.listing.permissions, INVENTORY_PERMISSIONS);
+  assert.equal(r.listing.verified, false);
+  for (const extra of [{ official: true }, { verified: true }, { kind: "official" }, { publisherKind: "company" }, { creatorSub: bob.sub }, { creatorName: "AI Workplace" }, { badge: "official" }, { permissions: ["Everything"] }]) {
+    const spoof = publishListing(db, deps, alice.sub, { clientRequestId: `spoof-${Object.keys(extra)[0]}`, listing: inventoryDraft(extra) });
+    assert.ok(!spoof.ok, JSON.stringify(extra));
+  }
+  for (const [n, actionConfig] of [undefined, { minimumQuantity: 0, targetQuantity: 3 }, { minimumQuantity: 9, targetQuantity: 3 }, { minimumQuantity: 1, targetQuantity: 100001 }].entries()) {
+    const bad = publishListing(db, deps, alice.sub, { clientRequestId: `bad-config-${n}-xxxx`, listing: inventoryDraft({ actionConfig }) });
+    assert.ok(!bad.ok && bad.error.fields?.actionConfig, JSON.stringify(actionConfig));
+  }
+  assert.equal(listMarketplace(db).filter((l) => l.kind === "community").length, 1, "rejections publish nothing");
+  assert.equal(listMarketplace(db).filter((l) => l.verified).length, 2, "only the code-defined listings are official");
+});
+
+test("B hires A's inventory agent and gets a real, private, local audit using hire-time settings", async () => {
+  const p = publishListing(db, deps, alice.sub, { clientRequestId: "publish-scout-2", listing: inventoryDraft() });
+  assert.ok(p.ok);
+  const a = ensurePersonalWorkspace(db, deps, alice), b = ensurePersonalWorkspace(db, deps, bob);
+  const hired = approveHire(db, deps, b, { profileId: p.listing.id });
+  assert.ok(hired.ok && hired.created);
+  const duplicate = approveHire(db, deps, b, { profileId: p.listing.id });
+  assert.ok(duplicate.ok && !duplicate.created && duplicate.hireId === hired.hireId, "an existing team hire is reused, not hired twice");
+  // A later edit to the listing cannot change the hired thresholds.
+  db.prepare("UPDATE marketplace_listings SET action_config = ? WHERE id = ?").run(JSON.stringify({ minimumQuantity: 1, targetQuantity: 1 }), p.listing.id);
+
+  const request = { clientRequestId: "audit-request-1", csv: CSV };
+  const submitted = submitAgentJob(db, deps, b, hired.hireId, request);
+  assert.ok(submitted.ok);
+  const retry = submitAgentJob(db, deps, b, hired.hireId, request);
+  assert.ok(retry.ok && retry.jobId === submitted.jobId && retry.runJobIds.length === 0);
+  await runJob(db, deps, submitted.jobId);
+
+  const state = getState(db, b, "sample", 0)!;
+  const job = state.jobs.find((j) => j.id === submitted.jobId)!;
+  assert.equal(job.status, "completed");
+  assert.equal(job.report?.mode, "local");
+  assert.equal(job.report?.outcome, "audited");
+  assert.equal(job.report?.hourlyRateCents, 650);
+  assert.ok(job.report?.body.type === "inventory_audit");
+  if (job.report?.body.type === "inventory_audit") {
+    const r = job.report.body.result;
+    assert.deepEqual([r.minimumQuantity, r.targetQuantity, r.rowCount, r.lowStockCount, r.totalRestockUnits], [5, 12, 3, 2, 21]);
+    assert.deepEqual(r.rows.map((row) => row.restockUnits), [9, 0, 12]);
+    assert.equal(r.inputSha256, createHash("sha256").update(CSV).digest("hex"));
+  }
+  assert.ok(state.team.some((h) => h.id === hired.hireId), "a worker hired from a desk is kept on the team");
+
+  // Private: the publisher sees nothing of the hirer's office, input or report.
+  const file = (db.prepare("PRAGMA database_list").get() as { file: string }).file;
+  assert.equal(readSavedJobs(file, b, alice.sub), null);
+  assert.equal(readSavedJobs(file, b, bob.sub)?.[0].report?.id, job.report?.id);
+  assert.ok(!JSON.stringify(getState(db, a, "sample", 0)).includes("BOB-PRIVATE-BOLT"));
+  assert.ok(!JSON.stringify(listMarketplace(db, alice.sub)).includes("BOB-PRIVATE-BOLT"));
+  assert.ok(!listWorkspaces(db, alice.sub).some((w) => w.id === b));
+  assert.equal(submitAgentJob(db, deps, a, hired.hireId, { clientRequestId: "cross-office-attack", csv: CSV }).ok, false);
+});
+
+test("an invalid CSV fails the job with no fabricated report", async () => {
+  const p = publishListing(db, deps, alice.sub, { clientRequestId: "publish-scout-3", listing: inventoryDraft() });
+  assert.ok(p.ok);
+  const b = ensurePersonalWorkspace(db, deps, bob);
+  const h = approveHire(db, deps, b, { profileId: p.listing.id });
+  assert.ok(h.ok);
+  const r = submitAgentJob(db, deps, b, h.hireId, { clientRequestId: "invalid-csv-task", csv: "sku,quantity\nPART-A,-1" });
+  assert.ok(r.ok);
+  await runJob(db, deps, r.jobId);
+  const job = getState(db, b, "sample", 0)!.jobs[0];
+  assert.equal(job.status, "failed");
+  assert.equal(job.report, null);
+  assert.match(job.error!.message, /whole quantity/);
+});
+
+test("inventory execution handles quoted SKUs, blank lines, exact boundaries and rejects bad or oversized data", () => {
+  const config = { minimumQuantity: 5, targetQuantity: 10 };
+  const actual = auditInventory('sku,quantity\r\n\r\n"A, B",4\r\n"C""D",5\r\n', config);
+  assert.equal(actual.rows[0].line, 3); assert.equal(actual.rows[0].sku, "A, B"); assert.equal(actual.rows[0].restockUnits, 6); assert.equal(actual.rows[1].sku, 'C"D'); assert.equal(actual.rows[1].lowStock, false);
+  for (const csv of ["", "sku,quantity", "part,count\nA,3", "sku,quantity\nA,-1", "sku,quantity\nA,1.2", "sku,quantity\nA,1\na,2", 'sku,quantity\n"A\nB",3', "sku,quantity\nA,2,3", "sku,quantity\nA,1000000001", "x".repeat(50001), "sku,quantity\n" + Array.from({ length: 501 }, (_, i) => `P${i},1`).join("\n")]) assert.throws(() => auditInventory(csv, config));
+});
+
 // --- migration ---------------------------------------------------------------------------
+// Fixtures are the exact schemas written by each release (see tests/fixtures).
 
-test("a v3 database gains listings and back-fills the cast character on existing hires", () => {
-  const file = path.join(tmp, `v3-${Math.random()}.db`);
-  const current = openDb(file);
-  const ws = ensurePersonalWorkspace(current, deps, alice);
-  assert.ok(approveHire(current, deps, ws, { profileId: "procurement_researcher" }).ok);
-  current.close();
-  // Turn it back into a v3 file.
+const fixture = (name: string) => fs.readFileSync(new URL(`./fixtures/schema-${name}.sql`, import.meta.url), "utf8");
+const userVersion = (d: Db) => (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+function legacyFile(name: string, version: number, data: string) {
+  const file = path.join(tmp, `${name}-${Math.random()}.db`);
   const raw = new DatabaseSync(file);
-  raw.exec(`DROP TABLE marketplace_listings; ALTER TABLE hires DROP COLUMN character_name; ALTER TABLE hires DROP COLUMN sprite;
-    ALTER TABLE hires DROP COLUMN listing_kind; ALTER TABLE hires DROP COLUMN publisher_name; PRAGMA user_version = 3;`);
+  raw.exec(fixture(name));
+  raw.exec(data);
+  raw.exec(`PRAGMA user_version = ${version}`);
   raw.close();
+  return file;
+}
 
+test("a v3 database keeps jobs and reports, and existing hires keep their cast character", () => {
+  const file = legacyFile("v3", 3, `
+    INSERT INTO workspaces VALUES ('north','North',1,'auth0|alice');
+    INSERT INTO hires VALUES ('staff_north_quality_inspector','north','quality_inspector','Quality Inspector','["camera_diagnostics","visual_inspection"]',NULL,'staff','workstation-01',1);
+    INSERT INTO hires VALUES ('hire_ro','north','procurement_researcher','Procurement Researcher','["supplier_research"]',600,'marketplace','desk-02',2);
+    INSERT INTO jobs VALUES ('job_1','north','req-00000001','supplier_lookup','t','{"partName":"Pi","supplierId":"adafruit","supplierName":"Adafruit"}','supplier_research','completed','hire_ro','procurement_researcher',3,3,3,4,NULL);
+    INSERT INTO reports VALUES ('rpt_1','north','job_1','hire_ro','sample','found','s','{}',10,600,0,4);`);
   db = openDb(file);
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, SCHEMA_VERSION);
-  const rows = db.prepare("SELECT profile_id, character_name, sprite, listing_kind FROM hires ORDER BY character_name").all();
-  assert.deepEqual(rows.map((r) => ({ ...r })), [
-    { profile_id: "quality_inspector", character_name: "Inez", sprite: '{"kind":"cast","id":"quality_inspector"}', listing_kind: null },
-    { profile_id: "procurement_researcher", character_name: "Ro", sprite: '{"kind":"cast","id":"procurement_researcher"}', listing_kind: "official" },
+  assert.equal(userVersion(db), SCHEMA_VERSION);
+  const state = getState(db, "north", "sample", 0)!;
+  assert.deepEqual(state.team.map((h) => [h.characterName, h.sprite, h.retention]).sort(), [
+    ["Inez", { kind: "cast", id: "quality_inspector" }, "team"],
+    ["Ro", { kind: "cast", id: "procurement_researcher" }, "team"],
   ]);
+  assert.equal(state.jobs[0].report?.id, "rpt_1");
+  assert.equal(state.jobs[0].hireName, "Ro");
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
   assert.equal(fs.readdirSync(tmp).filter((f) => f.startsWith(path.basename(file) + ".v3-backup-")).length, 1);
   assert.ok(publish(bob).ok, "listings table works after migration");
+});
+
+test("a v4 database from the marketplace branch keeps community listings, sprites and hires", () => {
+  const custom = JSON.stringify(sprite);
+  const file = legacyFile("v4-marketplace", 4, `
+    INSERT INTO workspaces VALUES ('north','North',1,'auth0|alice');
+    INSERT INTO marketplace_listings VALUES ('community-juno-abc123','auth0|bob','pub-1','Bob','Juno','Parts Scout','Finds parts.','Hi!','["supplier_research"]',350,'Checked stock.','${custom}',5);
+    INSERT INTO hires VALUES ('hire_juno','north','community-juno-abc123','Parts Scout','["supplier_research"]',350,'marketplace','desk-02',6,'Juno','${custom}','community','Bob');`);
+  db = openDb(file);
+  assert.equal(userVersion(db), SCHEMA_VERSION);
+  const listing = listMarketplace(db, bob.sub).find((l) => l.id === "community-juno-abc123")!;
+  assert.deepEqual([listing.characterName, listing.publisher, listing.sprite], ["Juno", { name: "Bob", isYou: true }, sprite]);
+  const juno = getState(db, "north", "sample", 0)!.team.find((h) => h.id === "hire_juno")!;
+  assert.deepEqual([juno.characterName, juno.sprite, juno.listingKind, juno.publisherName, juno.retention], ["Juno", sprite, "community", "Bob", "team"]);
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+});
+
+test("a v4 database from marketplace-publishing keeps inventory agents, their hires and local reports", () => {
+  const snap = JSON.stringify({ id: "agent_1", role: "Shelf Scout", avatarId: "catalog_assistant", permissions: INVENTORY_PERMISSIONS, specialty: "Audits.",
+    listing: { creatorName: "Alice Creator", publisherKind: "community", official: false, avatarId: "catalog_assistant", supportedAction: "inventory_audit", configuration: { minimumQuantity: 5, targetQuantity: 12 } } });
+  const file = legacyFile("v4-publishing", 4, `
+    INSERT INTO workspaces VALUES ('south','South',1,'auth0|bob');
+    INSERT INTO marketplace_listings VALUES ('agent_1','auth0|alice','Alice Creator','community','Shelf Scout','Audits.','catalog_assistant','["inventory_audit"]',650,'[]','inventory_audit','{"minimumQuantity":5,"targetQuantity":12}',7,'publish-1');
+    INSERT INTO hires VALUES ('hire_scout','south','agent_1','Shelf Scout','["inventory_audit"]',650,'marketplace','desk-02',8,'${snap}');
+    INSERT INTO jobs VALUES ('job_a','south','req-00000002','inventory_audit','Audit','{"csv":"sku,quantity\\nA,1"}','inventory_audit','completed','hire_scout',NULL,9,9,9,10,NULL);
+    INSERT INTO reports VALUES ('rpt_a','south','job_a','hire_scout','local','audited','s','{}',1,650,0,10);`);
+  db = openDb(file);
+  assert.equal(userVersion(db), SCHEMA_VERSION);
+  const listings = listMarketplace(db);
+  assert.deepEqual(listings.map((l) => [l.id, l.verified]), [["catalog_assistant", true], ["procurement_researcher", true], ["agent_1", false]], "company rows become the code-defined official listings");
+  assert.deepEqual(listings[2].actionConfig, { minimumQuantity: 5, targetQuantity: 12 });
+  assert.deepEqual(listings[2].sprite, { kind: "cast", id: "catalog_assistant" }, "the chosen preset avatar becomes the sprite");
+  const state = getState(db, "south", "sample", 0)!;
+  const scout = state.team.find((h) => h.id === "hire_scout")!;
+  assert.deepEqual(scout.actionConfig, { minimumQuantity: 5, targetQuantity: 12 });
+  assert.equal(scout.publisherName, "Alice Creator");
+  assert.equal(state.jobs[0].report?.mode, "local");
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
 });

@@ -134,6 +134,7 @@ export default function Marketplace() {
               <ListingBadge kind={l.kind} publisher={l.publisher.isYou ? `${l.publisher.name} (you)` : l.publisher.name} />
               <p className="market-specialty">{l.specialty}</p>
               <blockquote className="market-greeting">“{l.greeting}”</blockquote>
+              {l.actionConfig && <p className="market-action"><strong>Action:</strong> Inventory CSV audit · executed locally · low stock below {l.actionConfig.minimumQuantity}, restock to {l.actionConfig.targetQuantity}</p>}
               <ul className="market-skills" aria-label="Skills">{l.skills.map(s => <li key={s} data-match={s === skill || undefined}>{SKILLS[s]}{s === skill ? " ✓" : ""}</li>)}</ul>
               <details className="market-more"><summary>Sample work and permissions</summary>
                 <p><strong>Sample work:</strong> {l.sampleWork}</p>
@@ -180,6 +181,9 @@ function HireDialog({ listing, workspaces, initial, jobId, onClose }: {
   const [choice, setChoice] = useState<string | null>(initial && choices.some(w => w.id === initial && !reason(w)) ? initial : firstFree);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // For a held job the default is "For this job"; hiring into an office without a job keeps the worker.
+  const [retention, setRetention] = useState<"job" | "team">(jobId ? "job" : "team");
+  const [instructions, setInstructions] = useState("");
 
   async function hire(event: React.FormEvent) {
     event.preventDefault();
@@ -188,7 +192,7 @@ function HireDialog({ listing, workspaces, initial, jobId, onClose }: {
     try {
       const res = await fetch(`/api/workspaces/${encodeURIComponent(choice)}/hires`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: listing.id, jobId: jobId ?? undefined }),
+        body: JSON.stringify({ profileId: listing.id, jobId: jobId ?? undefined, retention, instructions: instructions.trim() || undefined }),
       });
       const body = await res.json();
       if (!res.ok || !body.ok) { setError(body.error?.message ?? "The hire could not be saved."); setSubmitting(false); return; }
@@ -218,8 +222,18 @@ function HireDialog({ listing, workspaces, initial, jobId, onClose }: {
           </label>;
         })}
       </fieldset>
+      <fieldset className="market-picker">
+        <legend>How long should {listing.characterName} stay?</legend>
+        {jobId && <label className="market-pickerRow"><input type="radio" name="retention" checked={retention === "job"} onChange={() => setRetention("job")} />
+          <span><strong>For this job</strong><small>Brings the report to reception, then leaves. The report stays in workflow history.</small></span></label>}
+        <label className="market-pickerRow"><input type="radio" name="retention" checked={retention === "team"} onChange={() => setRetention("team")} />
+          <span><strong>Keep on team</strong><small>Returns to its desk after each report. Later jobs needing its skills go to it first.</small></span></label>
+      </fieldset>
+      <label className="market-field">Instructions for {listing.characterName} (optional, saved with this hire)
+        <textarea rows={2} maxLength={1000} value={instructions} onChange={e => setInstructions(e.target.value)} placeholder="Added to each job brief for this worker." />
+      </label>
       {listing.kind === "community" && <p className="market-fine">Community listing by {listing.publisher.name}. It is not verified by AI Workplace and runs on the platform’s tools for its skills, with the permissions listed on the card.</p>}
-      <p className="market-fine">{listing.characterName} walks in through the entrance to the first open desk. The hire, its rate and this character are saved with the office.</p>
+      <p className="market-fine">{listing.characterName} walks in through the entrance to the first open desk. The hire, its rate, instructions and this character are saved with the office.</p>
       {error && <p className="market-error" role="alert">{error}</p>}
       <div className="market-dialogActions">
         <button type="button" className="market-secondary" onClick={onClose}>Cancel</button>
@@ -229,7 +243,7 @@ function HireDialog({ listing, workspaces, initial, jobId, onClose }: {
   </dialog>;
 }
 
-type Draft = { characterName: string; role: string; specialty: string; greeting: string; skills: SkillId[]; rate: string; sampleWork: string; publisherName: string; sprite: CustomSprite };
+type Draft = { characterName: string; role: string; specialty: string; greeting: string; skills: SkillId[]; rate: string; sampleWork: string; publisherName: string; sprite: CustomSprite; minimum: string; target: string };
 
 const PART_LABEL: Record<string, string> = {
   crop: "Crop", long: "Long", bun: "Bun", curls: "Curls", cap: "Cap", beanie: "Beanie", shaved: "Shaved",
@@ -241,7 +255,7 @@ function PublishDialog({ suggestedPublisher, onClose, onPublished }: { suggested
   const dialogRef = useModal();
   const cancel = (e: React.SyntheticEvent) => { e.preventDefault(); onClose(); };
   const [draft, setDraft] = useState<Draft>(() => ({
-    characterName: "", role: "", specialty: "", greeting: "", skills: [], rate: "5.00", sampleWork: "",
+    characterName: "", role: "", specialty: "", greeting: "", skills: [], rate: "5.00", sampleWork: "", minimum: "5", target: "12",
     publisherName: suggestedPublisher, sprite: spriteFromSeed(7),
   }));
   const [errors, setErrors] = useState<Partial<Record<PublishField, string>>>({});
@@ -254,7 +268,7 @@ function PublishDialog({ suggestedPublisher, onClose, onPublished }: { suggested
   const clearError = (key: PublishField) => setErrors(e => { if (!e[key]) return e; const next = { ...e }; delete next[key]; return next; });
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft(d => ({ ...d, [key]: value }));
-    clearError(key === "rate" ? "hourlyRateCents" : key);
+    clearError(key === "rate" ? "hourlyRateCents" : key === "minimum" || key === "target" ? "actionConfig" : key);
   };
   const setPart = <K extends keyof CustomSprite>(key: K, value: CustomSprite[K]) => { setDraft(d => ({ ...d, sprite: { ...d.sprite, [key]: value } })); clearError("sprite"); };
   const L = PUBLISH_LIMITS;
@@ -264,12 +278,13 @@ function PublishDialog({ suggestedPublisher, onClose, onPublished }: { suggested
     if (submitting) return;
     setSubmitting(true); setFailure(null);
     requestId.current ??= newRequestId();
-    const { rate, ...rest } = draft;
+    const { rate, minimum, target, ...rest } = draft;
+    const actionConfig = draft.skills.includes("inventory_audit") ? { minimumQuantity: Number(minimum), targetQuantity: Number(target) } : undefined;
     const cents = Math.round(Number(rate) * 100);
     try {
       const res = await fetch("/api/marketplace/listings", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientRequestId: requestId.current, listing: { ...rest, hourlyRateCents: Number.isFinite(cents) ? cents : null } }),
+        body: JSON.stringify({ clientRequestId: requestId.current, listing: { ...rest, actionConfig, hourlyRateCents: Number.isFinite(cents) ? cents : null } }),
       });
       const body = await res.json();
       setSubmitting(false);
@@ -287,7 +302,7 @@ function PublishDialog({ suggestedPublisher, onClose, onPublished }: { suggested
     }
   }
 
-  const field = (key: Exclude<PublishField, "skills" | "sprite" | "hourlyRateCents">, label: string, opts: { multiline?: boolean; placeholder: string; max: number }) => {
+  const field = (key: Exclude<PublishField, "skills" | "sprite" | "hourlyRateCents" | "actionConfig">, label: string, opts: { multiline?: boolean; placeholder: string; max: number }) => {
     const id = `publish-${key}`;
     const Input = opts.multiline ? "textarea" : "input";
     return <label className="market-field" htmlFor={id}>
@@ -347,6 +362,13 @@ function PublishDialog({ suggestedPublisher, onClose, onPublished }: { suggested
             </label>)}</div>
             {errors.skills && <small id="publish-skills-error" className="market-fieldError">{errors.skills}</small>}
           </fieldset>
+          {draft.skills.includes("inventory_audit") && <fieldset className="market-parts market-thresholds" aria-describedby={errors.actionConfig ? "publish-config-error" : "publish-config-help"}>
+            <legend>Inventory audit action</legend>
+            <p id="publish-config-help" className="market-fine">Hirers submit a CSV (sku,quantity). Rows below the minimum are flagged and restocked up to the target. Runs locally; you never see hirers’ inventory or reports.</p>
+            <label className="market-field">Low-stock minimum<input type="number" min={1} max={100000} step={1} value={draft.minimum} aria-invalid={errors.actionConfig ? true : undefined} onChange={e => set("minimum", e.target.value)} /></label>
+            <label className="market-field">Restock target<input type="number" min={1} max={100000} step={1} value={draft.target} aria-invalid={errors.actionConfig ? true : undefined} onChange={e => set("target", e.target.value)} /></label>
+            {errors.actionConfig && <small id="publish-config-error" className="market-fieldError">{errors.actionConfig}</small>}
+          </fieldset>}
           <label className="market-field" htmlFor="publish-rate">
             <span>Hourly rate (USD, ${L.rateCents[0] / 100}–${L.rateCents[1] / 100})</span>
             <input id="publish-rate" name="rate" type="number" inputMode="decimal" min={L.rateCents[0] / 100} max={L.rateCents[1] / 100} step="0.5" value={draft.rate}

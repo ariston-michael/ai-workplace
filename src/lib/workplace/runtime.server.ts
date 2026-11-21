@@ -26,11 +26,23 @@ import {
   resetWorkspace,
   runJob,
   setCameraFault,
+  submitAgentJob,
   submitRequest,
+  updateHire,
+  hasCsv,
   type ServiceDeps,
   type Viewer,
 } from "./service.server.ts";
 import { lookupPart, procurementMode } from "../procurement-provider.server.ts";
+import { geminiConfig } from "../gemini.server.ts";
+import { dispatch } from "./dispatcher-ai.server.ts";
+import type { DispatcherInfo } from "./types.ts";
+
+/** Which engine the Dispatcher uses on this server (shown as a badge in the office). */
+export function dispatcherInfo(): DispatcherInfo {
+  const g = geminiConfig();
+  return g ? { engine: "gemini", model: g.model } : { engine: "rules", model: null };
+}
 
 export function serviceDeps(): ServiceDeps {
   return { now: () => Date.now(), newId: defaultIds, lookup: (partName, supplier) => lookupPart(partName, supplier) };
@@ -54,7 +66,7 @@ export function currentState(ws: string) {
   const now = Date.now();
   if (!getWorkspace(db, ws)) return null;
   scheduleJobs(recoverJobs(db, ws, now));
-  return getState(db, ws, procurementMode(), now);
+  return getState(db, ws, procurementMode(), now, dispatcherInfo());
 }
 
 async function readObject(request: Request): Promise<Record<string, unknown> | null> {
@@ -154,11 +166,22 @@ export async function handleJobs(request: Request, ref: WorkspaceRef) {
   const { ws } = auth;
   const body = await readObject(request);
   if (!body) return badBody();
-  const r = submitRequest(getDb(), serviceDeps(), ws, { clientRequestId: body.clientRequestId, request: body.request, pending: body.pending });
+  const db = getDb();
+  // A retried submission returns its original job without asking Gemini again.
+  if (typeof body.clientRequestId === "string") {
+    const existing = db.prepare("SELECT id FROM jobs WHERE workspace_id = ? AND client_request_id = ?").get(ws, body.clientRequestId) as { id: string } | undefined;
+    if (existing) return withState(ws, { kind: "job", jobId: existing.id, understood: "your earlier request" });
+  }
+  // The CSV stays on this server; Gemini only learns that one is attached.
+  const csvAttached = hasCsv(body.csv);
+  const d = await dispatch(body.request, body.pending, { csvAttached }, geminiConfig());
+  if (d.fallback) console.warn(`[dispatcher] Gemini unavailable, used rules: ${d.fallback.code}`);
+  const r = submitRequest(db, serviceDeps(), ws, { clientRequestId: body.clientRequestId, request: body.request, pending: body.pending, csv: body.csv }, d.interpretation, d.engine);
   if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
-  if (r.kind !== "job") return Response.json(r);
+  const dispatcher = { ...d.engine, fallback: d.fallback?.code ?? null };
+  if (r.kind !== "job") return Response.json({ ...r, dispatcher });
   scheduleJobs(r.runJobIds);
-  return withState(ws, { kind: "job", jobId: r.jobId, understood: r.understood });
+  return withState(ws, { kind: "job", jobId: r.jobId, understood: r.understood, dispatcher });
 }
 
 export async function handleHires(request: Request, ref: WorkspaceRef) {
@@ -167,7 +190,7 @@ export async function handleHires(request: Request, ref: WorkspaceRef) {
   const { ws } = auth;
   const body = await readObject(request);
   if (!body) return badBody();
-  const r = approveHire(getDb(), serviceDeps(), ws, { profileId: body.profileId, jobId: body.jobId });
+  const r = approveHire(getDb(), serviceDeps(), ws, { profileId: body.profileId, jobId: body.jobId, retention: body.retention, instructions: body.instructions });
   if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
   scheduleJobs(r.runJobIds);
   return withState(ws, { hireId: r.hireId, created: r.created });
@@ -217,4 +240,27 @@ export async function handlePublish(request: Request) {
   const r = publishListing(getDb(), serviceDeps(), viewer.sub, { clientRequestId: body.clientRequestId, listing: body.listing });
   if (!r.ok) return Response.json({ ok: false, error: r.error }, { status: r.status });
   return Response.json({ ok: true, listing: r.listing, created: r.created }, { status: r.created ? 201 : 200 });
+}
+
+/** Keep on team, release, or save instructions for one hire in this office. */
+export async function handleUpdateHire(request: Request, ref: WorkspaceRef, hireId: string) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const body = await readObject(request);
+  if (!body) return badBody();
+  const r = updateHire(getDb(), serviceDeps(), auth.ws, hireId, { retention: body.retention, instructions: body.instructions });
+  if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
+  return withState(auth.ws, { hireId: r.hireId });
+}
+
+/** Run a hired worker's inventory action from its profile. Ownership and hire membership are checked first. */
+export async function handleAgentJob(request: Request, ref: WorkspaceRef, hireId: string) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const body = await readObject(request);
+  if (!body) return badBody();
+  const result = submitAgentJob(getDb(), serviceDeps(), auth.ws, hireId, { clientRequestId: body.clientRequestId, csv: body.csv });
+  if (!result.ok) return errorJson(result.status, result.error.code, result.error.message);
+  scheduleJobs(result.runJobIds);
+  return withState(auth.ws, { jobId: result.jobId });
 }

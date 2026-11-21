@@ -305,3 +305,31 @@
 .office-marketLink { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 16px; padding: 11px 13px; border: 1px dashed #9fb3a3; border-radius: 7px; color: #2e493e; font-size: 12px; font-weight: 600; text-decoration: none; background: #f4f7ef; }
 .office-marketLink:hover { background: #e9f0e3; }
 .office-recommendation .office-marketLink { margin: 12px 0 0; }
+
+.office-characterIdentity > div { min-width: 0; }
+.office-characterIdentity h3 { overflow-wrap: anywhere; }
+/* Gemini Dispatcher, CSV attachment, hire terms, demo meter, hire history */
+.office-geminiBadge { border-color: #b8cdf3 !important; background: #eef3fd !important; color: #1d3f8f !important; }
+.office-geminiBadge > span { background: #3b7be8 !important; }
+.office-csvAttach { margin: 4px 0 12px; border: 1px dashed #c9d2c0; border-radius: 7px; padding: 8px 11px; font-size: 12px; }
+.office-csvAttach > summary { cursor: pointer; font-weight: 600; color: #2e493e; min-height: 24px; line-height: 24px; }
+.office-csvAttach textarea { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 12px; }
+.office-csvFile { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11.5px; margin: 6px 0; color: var(--muted); }
+.office-terms { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; display: grid; gap: 8px; }
+.office-terms legend { font-size: 12px; font-weight: 650; padding: 0 4px; }
+.office-terms > label:not(.office-field) { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; cursor: pointer; }
+.office-terms > label > span { display: grid; gap: 2px; }
+.office-terms small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.office-keepRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin: 6px 0; }
+.office-meter { display: flex; align-items: center; gap: 7px; font-size: 12px; margin: 6px 0; color: #384e49; font-variant-numeric: tabular-nums; }
+.office-meterDot { width: 8px; height: 8px; border-radius: 50%; background: #9aa59a; }
+.office-meter[data-meter="running"] .office-meterDot { background: #d9822b; box-shadow: 0 0 0 3px #d9822b33; animation: meterPulse 1s ease-in-out infinite; }
+.office-meter[data-meter="stopped"] .office-meterDot { background: #2e493e; }
+@keyframes meterPulse { 50% { box-shadow: 0 0 0 6px #d9822b11; } }
+.office-instructions { margin: 14px 0; display: grid; gap: 6px; }
+.office-hireHistory, .office-permissions { margin: 12px 0; font-size: 12px; }
+.office-hireHistory > summary, .office-permissions > summary { cursor: pointer; }
+.office-hireHistory ol { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; color: #384e49; }
+.office-hireHistory li[data-kind="departed"] { color: #8b3e29; }
+.office-mapWalker[data-gone] { visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .office-meter[data-meter="running"] .office-meterDot { animation: none; } }

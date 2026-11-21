@@ -105,43 +105,42 @@ test("jobs submitted to the owned office stay there", () => {
   assert.equal(getState(db, b, "sample", 0)!.jobs.length, 0);
 });
 
-// --- migration to v3 (and on to the current version) -------------------------
+// --- migration from older versions to the current one --------------------------
+
+const fixture = (name: string) => fs.readFileSync(new URL(`./fixtures/schema-${name}.sql`, import.meta.url), "utf8");
 
 test("fresh database is the current schema with an unowned default office", () => {
-  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal(SCHEMA_VERSION, 5);
   assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, SCHEMA_VERSION);
   assert.equal((db.prepare("SELECT owner_sub FROM workspaces WHERE id = 'default'").get() as { owner_sub: string | null }).owner_sub, null);
 });
 
-test("a v2 database keeps all its data, gains owner_sub, and is backed up", () => {
-  const file = path.join(tmp, `v2-${Math.random()}.db`);
-  // Build a real v2 file: v1 schema with data, migrated by the v2 rules, then stamped v2.
+test("a v1 database is upgraded in one go and keeps its jobs", () => {
+  const file = path.join(tmp, `v1-${Math.random()}.db`);
   const v1 = new DatabaseSync(file);
   v1.exec(V1_SCHEMA);
   v1.exec(`INSERT INTO hires VALUES ('staff_quality_inspector','demo','quality_inspector','Quality Inspector','["camera_diagnostics"]',NULL,'staff','workstation-01',1);
            INSERT INTO jobs VALUES ('job_a','demo','req-aaaaaaaa','camera_incident','t','{"station":"Packing Station 1"}','camera_diagnostics','completed','staff_quality_inspector',NULL,1,1,1,2,NULL);`);
   v1.close();
-  // Simulate the previous release: migrate to v2 only.
-  const asV2 = new DatabaseSync(file);
-  const before = (asV2.prepare("SELECT COUNT(*) AS n FROM jobs").get() as { n: number }).n;
-  asV2.close();
-  db = openDb(file); // v1 -> v2 -> v3 -> v4 in one go
+  db = openDb(file); // v1 -> v2 -> v3 -> v4 -> v5
   assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, SCHEMA_VERSION);
-  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE workspace_id = 'default'").get() as { n: number }).n, before);
-  db.close();
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE workspace_id = 'default'").get() as { n: number }).n, 1);
+  assert.equal(fs.readdirSync(tmp).filter((f) => f.startsWith(path.basename(file) + ".v1-backup-")).length, 1);
+});
 
-  // Now prove the v2 -> v3 step on its own: downgrade the stamp, drop the column, reopen.
+test("a real v2 database keeps all its data, gains an owner, and is backed up", () => {
+  const file = path.join(tmp, `v2-${Math.random()}.db`);
   const raw = new DatabaseSync(file);
-  raw.exec(`DROP TABLE marketplace_listings; ALTER TABLE hires DROP COLUMN character_name; ALTER TABLE hires DROP COLUMN sprite;
-    ALTER TABLE hires DROP COLUMN listing_kind; ALTER TABLE hires DROP COLUMN publisher_name;
-    DROP INDEX workspaces_by_owner; ALTER TABLE workspaces DROP COLUMN owner_sub; PRAGMA user_version = 2;`);
+  raw.exec(fixture("v2")); // schema and seed written by the v2 release (commit 51c3ceb)
+  raw.exec(`INSERT INTO hires VALUES ('staff_quality_inspector','default','quality_inspector','Quality Inspector','["camera_diagnostics"]',NULL,'staff','workstation-01',1);
+            INSERT INTO jobs VALUES ('job_a','default','req-aaaaaaaa','camera_incident','t','{"station":"Packing Station 1"}','camera_diagnostics','completed','staff_quality_inspector',NULL,1,1,1,2,NULL);
+            PRAGMA user_version = 2;`);
   raw.close();
   db = openDb(file);
   assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, SCHEMA_VERSION);
-  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM jobs").get() as { n: number }).n, before);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM jobs").get() as { n: number }).n, 1);
   assert.equal(getOwnedWorkspace(db, DEFAULT_WORKSPACE_ID, alice.sub), undefined, "still unowned after migration");
-  const backups = fs.readdirSync(tmp).filter((f) => f.startsWith(path.basename(file) + ".v2-backup-"));
-  assert.equal(backups.length, 1);
+  assert.equal(fs.readdirSync(tmp).filter((f) => f.startsWith(path.basename(file) + ".v2-backup-")).length, 1);
   claimUnownedWorkspaces(db, alice, "alice@example.com");
   assert.equal(getState(db, DEFAULT_WORKSPACE_ID, "sample", 0)!.jobs.length, 1, "demo data kept and usable by its owner");
 });

@@ -109,3 +109,7 @@
   .market-viewer { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .market-page .office-character .office-pose { animation: none !important; visibility: hidden; } .market-page .office-character .office-pose-0 { visibility: visible; } }
+.market-thresholds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.market-thresholds legend, .market-thresholds > p, .market-thresholds > small { grid-column: 1 / -1; }
+.market-action { font-size: 11.5px; line-height: 1.6; margin: 0 0 10px; padding: 6px 9px; border-radius: 6px; background: #eef3fd; color: #1d3f8f; }
+.market-dialog .market-field { margin-bottom: 10px; }

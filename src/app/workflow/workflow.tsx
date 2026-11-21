@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import InventoryReport from "../office/inventory-report";
 import { ACTION_LABEL } from "@/lib/camera-incident";
 import { SKILLS } from "@/lib/workplace/catalog";
 import type { JobView, ReportMode } from "@/lib/workplace/types";
@@ -13,7 +14,7 @@ const statusLabels = {
 };
 
 function Mode({ mode }: { mode: ReportMode }) {
-  return <span className={`workflow-mode workflow-mode-${mode}`}>{mode === "sample" ? "SAMPLE · FIXTURE" : mode === "simulated" ? "SIMULATED" : "LIVE"}</span>;
+  return <span className={`workflow-mode workflow-mode-${mode}`}>{mode === "local" ? "EXECUTED LOCALLY" : mode === "sample" ? "SAMPLE · FIXTURE" : mode === "simulated" ? "SIMULATED" : "LIVE"}</span>;
 }
 
 const savedTime = new Intl.DateTimeFormat("en-CA", {
@@ -52,6 +53,7 @@ function WorkerEvidence({ job }: { job: JobView }) {
       {result.uncertainties.length > 0 && <><h4>Saved uncertainties</h4><ul>{result.uncertainties.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
     </>;
   }
+  if (report.body.type === "inventory_audit") return <InventoryReport result={report.body.result} />;
   const incident = report.body.incident;
   return <>
     <dl className="workflow-facts"><div><dt>Station</dt><dd>{incident.station}</dd></div><div><dt>Incident status</dt><dd>{incident.status}</dd></div><div><dt>Saved phase</dt><dd>{incident.phase.replaceAll("_", " ")}</dd></div></dl>
@@ -71,7 +73,8 @@ function JobDetail({ job, headingRef }: { job: JobView; headingRef: React.RefObj
     <header className="workflow-detailHeader"><div className="workflow-badges"><span className="workflow-status">{statusLabels[job.status]}</span>{openIncident && <span className="workflow-openLabel">Incident still open</span>}{job.report && <Mode mode={job.report.mode} />}{!job.report && job.type === "camera_incident" && <Mode mode="simulated" />}</div><h2 ref={headingRef} tabIndex={-1} id="selected-job-title">{job.title}</h2><p className="workflow-id">{job.id} · {timestamp(job.createdAt)}</p></header>
     <div className="workflow-story">
       <section aria-labelledby="request-title"><p className="workflow-step">01 / THE REQUEST</p><h3 id="request-title">What the user asked</h3>
-        <dl className="workflow-facts">{"partName" in job.input ? <><div><dt>Part</dt><dd>{job.input.partName}</dd></div><div><dt>Supplier</dt><dd>{job.input.supplierName}</dd></div></> : <div><dt>Station</dt><dd>{job.input.station ?? job.title}</dd></div>}<div><dt>Required skill</dt><dd>{SKILLS[job.requiredSkill]}</dd></div></dl>
+        <dl className="workflow-facts">{"partName" in job.input ? <><div><dt>Part</dt><dd>{job.input.partName}</dd></div><div><dt>Supplier</dt><dd>{job.input.supplierName}</dd></div></> : "csv" in job.input ? <div><dt>Input</dt><dd>Private inventory CSV · submitted to this job</dd></div> : <div><dt>Station</dt><dd>{job.input.station ?? job.title}</dd></div>}<div><dt>Required skill</dt><dd>{SKILLS[job.requiredSkill]}</dd></div></dl>
+        {"csv" in job.input && <details><summary>Submitted inventory CSV</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{job.input.csv}</pre></details>}
         {job.input.request && <blockquote>{job.input.request}</blockquote>}
         {job.events.filter(event => event.actor === "You").map((event, index) => <blockquote key={index}>{event.text}</blockquote>)}
       </section>
