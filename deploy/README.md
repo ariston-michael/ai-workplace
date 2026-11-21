@@ -4,12 +4,20 @@ Starting point: PR #2 is open at `2ceade4` (not merged into main as of preparati
 This release branch adds standalone hosting and simulated SMS. It does not merge
 PR #2 or provision a paid instance. Confirm the live PR state before promotion.
 
+The deployment source must be the final `origin/main` commit explicitly confirmed
+by Copilot. That confirmation has not arrived. The earlier tested PR head and
+this preparation branch are not substitutes for the final main release. After
+confirmation, fetch main, verify the full confirmed SHA is its head, inspect how
+the hosting changes were integrated, and run the release checks against that
+exact source. If hosting changes are absent, integrate them through review and
+obtain confirmation of the resulting main SHA before building the release image.
+Record the confirmed source SHA and built image digest before provisioning.
+
 ## Host and account access required
 
-Reuse an existing Vultr Linux instance after checking available memory, disk,
-Docker/Compose, and whether ports 80/443 already serve anything. Do not replace
-an existing proxy or application. If a new instance is required, obtain the exact
-region/plan quote from the Vultr account and approval before creating it. A public
+The user has confirmed there is no existing Vultr instance and is checking
+credits. Obtain the exact region/plan quote from the Vultr account and approval
+before creating a new instance. Credit availability is not spending approval. A public
 DNS hostname must point to the chosen instance. No instance or DNS record has
 been created by this preparation.
 
@@ -51,11 +59,13 @@ been created by this preparation.
    is the DNS hostname only; `DEPLOY_COMMIT` is the full tested source SHA. Configure
    Auth0 to allow `https://<hostname>/auth/callback`, logout `https://<hostname>`
    and web origin `https://<hostname>`, preserving localhost entries.
-6. From the new release directory:
+6. Build and test the `linux/amd64` image on the Mac from the confirmed source,
+   tagged with its full SHA. Transfer the image archive over SSH and use
+   `docker load` on the instance. Do not compile the app on the 2 GB server.
+   From the transferred release directory, start that exact image:
 
    ```sh
-   docker compose --env-file /etc/ai-workplace/deploy.env -f deploy/compose.yaml build
-   docker compose --env-file /etc/ai-workplace/deploy.env -f deploy/compose.yaml up -d --wait
+   docker compose --env-file /etc/ai-workplace/deploy.env -f deploy/compose.yaml up -d --no-build --wait
    ```
 
 7. Check public `/api/health`, HTTP→HTTPS redirect, certificate trust, and Auth0
@@ -160,3 +170,25 @@ Read-only sources: https://api.vultr.com/v2/plans,
 https://api.vultr.com/v2/os,
 https://caddyserver.com/docs/automatic-https,
 https://github.com/auth0/nextjs-auth0/blob/main/README.md.
+
+
+## Public acceptance after deployment
+
+Record results against the confirmed source SHA and public hostname:
+
+- Confirm HTTP redirects to HTTPS, the certificate matches the hostname and is
+  trusted, and `/api/health` reports the expected commit and sample/simulated modes.
+- Use the real Auth0 hosted sign-in and callback in a browser, then open the
+  Workspaces dashboard, select an office, and click the Dispatcher. Test logout.
+- Request a sample procurement job that needs a hire, approve hiring, observe
+  the worker arrive, and open the completed report and its workflow history in
+  that same workspace. Confirm SAMPLE and SIMULATED labels remain visible.
+- Exercise the simulated SMS approval path and confirm its saved hire/report
+  appear in that workspace without sending carrier messages.
+- Restart the app and verify the workspace, hire, and report persist. Sign in
+  with a second account and verify copied workspace/office/workflow URLs and
+  private APIs do not reveal the first account's data.
+
+Public verification remains pending until provisioning is approved, the hostname
+is configured, and interactive Auth0 sign-in is available. Keep the separate Mac
+demo on port 3003 running throughout preparation and rollout.

@@ -1,7 +1,6 @@
 {
   "status": "proposal_only_not_approved",
   "provisioning_authorized": false,
-  "base_application_commit": "2ceade477b07abf6381fd565ddf701792380b619",
   "tested_deployment_code_commit": "0232e37",
   "provider": "Vultr",
   "region": "yto",
@@ -24,5 +23,9 @@
   "demo_fallback": "http://localhost:3003/office",
   "procurement_mode": "sample",
   "sms_mode": "simulated",
-  "billing_note": "Base compute only; taxes, domain registration, optional add-ons and excess usage are excluded. Reconfirm account checkout price and capacity before requesting approval."
+  "billing_note": "Base compute only; taxes, domain registration, optional add-ons and excess usage are excluded. Reconfirm account checkout price and capacity before requesting approval.",
+  "release_source": "Copilot-confirmed final origin/main commit; not selected yet",
+  "release_commit": null,
+  "release_confirmation_required": true,
+  "previous_tested_base_commit": "2ceade477b07abf6381fd565ddf701792380b619"
 }
