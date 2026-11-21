@@ -8,20 +8,25 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.mts"
+    "test": "node --test tests/*.test.mts",
+    "test:marketplace": "node scripts/check-marketplace.mjs",
+    "test:sms": "node scripts/check-sms.mjs",
+    "test:integration": "npm run test:sms && npm run test:marketplace"
   },
   "dependencies": {
+    "@auth0/nextjs-auth0": "^4.33.0",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "4.3.3",
-    "@types/node": "^20",
+    "@types/node": "^24.19.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "playwright": "^1.64.1",
     "tailwindcss": "4.3.3",
     "typescript": "^5"
   }

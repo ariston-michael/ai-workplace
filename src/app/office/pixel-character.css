@@ -1,0 +1,41 @@
+/* Original arcade cast: crisp pixel geometry, readable UI outside the artwork. */
+.office-character { display: block; width: 26px; height: 30px; position: relative; }
+.office-character .office-mapSprite { display: block; width: 26px; height: 30px; overflow: visible; }
+.office-facing { display: none; }
+.office-facing-south { display: inline; }
+.office-mapWalker[data-facing="north"] .office-facing, .office-mapWalker[data-facing="east"] .office-facing, .office-mapWalker[data-facing="west"] .office-facing { display: none; }
+.office-mapWalker[data-facing="north"] .office-facing-north, .office-mapWalker[data-facing="east"] .office-facing-east, .office-mapWalker[data-facing="west"] .office-facing-west { display: inline; }
+.office-pose { visibility: hidden; }
+.office-pose-0 { visibility: visible; }
+.office-mapWalker[data-travel="walking"] .office-pose { animation: characterSteps .56s step-end infinite; }
+.office-mapWalker[data-travel="walking"] .office-pose-1 { animation-delay: -.42s; }
+.office-mapWalker[data-travel="walking"] .office-pose-2 { animation-delay: -.28s; }
+.office-mapWalker[data-travel="walking"] .office-pose-3 { animation-delay: -.14s; }
+@keyframes characterSteps { 0%, 100% { visibility: visible; } 25% { visibility: hidden; } }
+.office-characterWave, .office-characterTick, .office-characterPage { opacity: 0; transform-box: fill-box; transform-origin: bottom left; }
+.office-character[data-gesture="wave"] .office-characterWave { animation: characterWave 5s steps(2, end) infinite; }
+.office-character[data-gesture="work"] .office-characterTick { animation: characterTick 2.4s step-end infinite; }
+.office-character[data-gesture="report"] .office-characterTick { animation: characterTick 1.6s step-end 1; }
+.office-character[data-gesture="work"] .office-characterPage { animation: characterPage 2s steps(3, end) infinite; }
+.office-character[data-gesture="report"] .office-characterPage { animation: characterPage 1.8s steps(3, end) 1; }
+.office-mapWalker[data-travel="walking"] .office-characterTick, .office-mapWalker[data-travel="walking"] .office-characterPage { animation: none; opacity: 0; }
+@keyframes characterWave { 0%, 18% { opacity: 1; transform: rotate(-15deg); } 6%, 14% { transform: rotate(15deg); } 24%, 100% { opacity: 0; } }
+@keyframes characterTick { 0%, 30% { opacity: 0; } 40%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes characterPage { 0%, 85%, 100% { opacity: 0; transform: scaleX(1); } 20% { opacity: 1; transform: scaleX(.3); } 45%, 70% { opacity: 1; transform: scaleX(1); } }
+.office-characterPortrait { width: 84px; height: 96px; flex: 0 0 84px; background: #e6e7df; border: 2px solid #263546; border-radius: 3px; box-shadow: 3px 3px #26354618; display: grid; place-items: center; }
+.office-characterPortrait .office-mapSprite { width: 78px; height: 90px; }
+.office-characterPortrait.office-character-dispatcher { background: #f7ddd3; }
+.office-characterPortrait.office-character-quality_inspector { background: #f6e9bd; }
+.office-characterPortrait.office-character-procurement_researcher { background: #ccebe6; }
+.office-characterPortrait.office-character-catalog_assistant { background: #e8def4; }
+.office-characterPortrait.office-character-custom { background: color-mix(in srgb, var(--character-accent, #7d8a99) 22%, #fbfaf5); }
+.office-character[data-fixed-facing] .office-facing { display: inline; }
+.office-character[data-stroll] .office-pose { animation: characterSteps .56s step-end infinite; }
+.office-character[data-stroll] .office-pose-1 { animation-delay: -.42s; }
+.office-character[data-stroll] .office-pose-2 { animation-delay: -.28s; }
+.office-character[data-stroll] .office-pose-3 { animation-delay: -.14s; }
+.pixel-verified { display: inline-block; vertical-align: -3px; flex: 0 0 auto; }
+@media (prefers-reduced-motion: reduce) { .office-character *, .office-mapWalker[data-travel="walking"] .office-character * { animation: none !important; } .office-character .office-pose { visibility: hidden; } .office-character .office-pose-0 { visibility: visible; } }
+.pixel-listingBadge { display: inline-flex; align-items: center; gap: 5px; margin: 3px 0; padding: 2px 7px 2px 5px; border: 1px solid #d9d6c8; border-radius: 3px; background: #f6f4ec; color: #4d5a57; font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1.5; }
+.pixel-listingOfficial { border-color: #b8cdf3; background: #eef3fd; color: #1d3f8f; }
+.pixel-listingCommunity { border-color: #e4d6b5; background: #fbf5e6; color: #6b5420; }

@@ -4,8 +4,6 @@
 .office-office button:focus-visible, .office-office a:focus-visible { outline: 3px solid #a34f2e; outline-offset: 5px; }
 .office-header { height: 84px; padding: 0 4%; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 .office-brand { display: flex; gap: 12px; align-items: center; color: var(--ink); text-decoration: none; font-weight: 650; letter-spacing: -.7px; font-size: 20px; }
-.office-logo { background: var(--ink); color: #f5f5ed; width: 35px; height: 35px; display: grid; place-content: center; grid-auto-flow: column; border-radius: 10px; font-size: 24px; letter-spacing: -3px; padding-right: 3px; }
-.office-logo span { color: #cbd77f; }
 .office-demoBadge { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: 1.3px; border: 1px solid #cdd4c5; border-radius: 30px; padding: 8px 12px; font-weight: 650; }
 .office-demoBadge > span, .office-liveDot, .office-status > span { width: 6px; height: 6px; border-radius: 50%; background: #64805c; display: inline-block; flex-shrink: 0; }
 .office-workspace { max-width: 1536px; margin: auto; padding: 42px 4% 20px; }
@@ -159,3 +157,189 @@
 @media (max-width: 1000px) { .office-layout { grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); gap: 16px; } .office-workspace { padding-right: 3%; padding-left: 3%; } .office-floorHeader { padding: 0 14px; } .office-floor { margin: 0 8px; } .office-stationLabel { padding: 6px; } .office-stationLabel > span { font-size: 10px; } .office-panelBody, .office-panelHeader { padding: 20px; } .office-sofa { right: 7%; } }
 @media (max-width: 780px) { .office-layout { grid-template-columns: 1fr; } .office-panel { min-height: 0; } .office-workspace { padding: 28px 18px 20px; } .office-header { height: 70px; padding: 0 20px; } .office-pageHeading { align-items: flex-start; } .office-pageHeading h1 { max-width: 380px; } .office-floor { height: 530px; } .office-panelBody { padding: 24px; } .office-welcomeArt { height: 100px; } .office-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; } .office-steps li { margin: 0; } }
 @media (max-width: 460px) { .office-brand { font-size: 16px; } .office-demoBadge { font-size: 8px; padding: 7px 9px; } .office-pageHeading { flex-direction: column; gap: 14px; } .office-pageHeading h1 { letter-spacing: -1px; font-size: 28px; } .office-floorHeader { padding: 0 12px; } .office-floorHeader > span { font-size: 9px; } .office-floor { border-width: 7px; margin: 0 7px; } .office-station { width: 46%; } .office-inspection { left: 2%; } .office-openDesk { right: 2%; } .office-reception { left: 3%; width: 50%; } .office-stationLabel > span { font-size: 9px; } .office-stationLabel small { font-size: 8px; } .office-desk { left: 6%; width: 88%; } .office-plantOne { right: 15px; } .office-floorFooter { padding: 14px; font-size: 10px; } .office-panelHeader h2 { font-size: 24px; } .office-steps { grid-template-columns: 1fr; } .office-pageFooter { flex-direction: column; gap: 8px; } }
+
+/* --- Workplace core: job desk, recommendations, reports, third desk --- */
+.office-headerBadges { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.office-sampleBadge { background: #fbf1d9; border-color: #e6cf98 !important; color: #7a5a12; }
+.office-sampleBadge > span { background: #c49a2c !important; }
+.office-liveBadge { background: #e3f1e3; border-color: #9cc59c !important; color: #245a24; }
+.office-modeBadge { font-size: 9px; font-weight: 700; letter-spacing: 1px; border-radius: 4px; padding: 3px 6px; color: #fff; white-space: nowrap; }
+.office-mode-live { background: #2f7d32; }
+.office-mode-sample { background: #b07d10; }
+.office-mode-simulated { background: #6d4bc4; }
+.office-jobDeskGrid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.8fr); gap: 28px; align-items: start; }
+.office-jobForm h2, .office-jobsTitle { margin: 0 0 16px; font-size: 20px; font-weight: 500; letter-spacing: -.5px; }
+.office-jobTypes { border: 0; padding: 0; margin: 0 0 14px; display: grid; gap: 8px; }
+.office-jobTypes legend { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.office-jobType { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); background: #f5f6ee; border-radius: 9px; padding: 10px 12px; cursor: pointer; }
+.office-jobType:has(input:checked) { background: #e5edd8; border-color: #647d50; }
+.office-jobType span { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.office-jobType small { color: var(--muted); font-size: 10px; }
+.office-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+.office-field input, .office-field select { font: inherit; font-size: 13px; color: var(--ink); padding: 10px; border: 1px solid #cdd4c5; background: #fffef9; border-radius: 7px; }
+.office-field input:focus-visible, .office-field select:focus-visible { outline: 3px solid #a34f2e; outline-offset: 2px; }
+.office-hireButton:disabled { opacity: .55; cursor: default; }
+.office-errorText { color: #9b2f16; font-size: 12px; margin: 10px 0 0; }
+.office-jobList { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; max-height: 720px; overflow: auto; }
+.office-jobCard { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: #fffef9; }
+.office-job-needs_worker { border-color: #e2c08f; background: #fffaf0; }
+.office-jobHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.office-jobHead > strong { flex: 1 1 260px; font-weight: 600; line-height: 1.5; }
+.office-jobStatus { font-size: 10px; border-radius: 20px; padding: 4px 9px; border: 1px solid #d8dfcd; background: #edf2e5; color: #4e6541; white-space: nowrap; }
+.office-jobStatus-needs_worker { background: #f6e6d6; color: #874823; border-color: #e7c4a9; }
+.office-jobStatus-working, .office-jobStatus-queued { background: #e3ecf6; color: #2d4f75; border-color: #bcd0e6; }
+.office-jobStatus-failed { background: #f7dede; color: #8a2424; border-color: #e5b5b5; }
+.office-jobMeta { font-size: 11px; color: var(--muted); line-height: 1.7; margin: 6px 0 0; }
+.office-recommendation { margin-top: 12px; padding: 12px; border: 1px dashed #d7b98a; border-radius: 9px; }
+.office-recommendation .office-candidate { margin: 12px 0 0; }
+.office-candidateMeta { font-size: 11px !important; margin: 0 0 8px !important; }
+.office-skillMatch { background: #2e493e !important; color: #f7f8ed !important; }
+.office-reportSummary { margin-top: 10px; font-size: 12px; }
+.office-reportSummary p { margin: 0; }
+.office-reportSummary details, .office-jobHistory { margin-top: 8px; }
+.office-reportSummary summary, .office-jobHistory summary { font-size: 11px; cursor: pointer; color: #3f5a4c; }
+.office-reportSummary .office-repairReport { margin: 10px 0 0; }
+.office-jobHistory ol { margin: 8px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.7; color: var(--muted); }
+.office-eventList { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.office-eventList li { font-size: 11px; line-height: 1.6; color: var(--muted); border-left: 2px solid #e0a58a; padding-left: 10px; }
+.office-eventList strong { display: block; color: var(--ink); font-weight: 600; }
+.office-deskThree { bottom: 27px; right: 6%; width: 42%; height: 170px; }
+.office-deskThree .office-stationArt { height: 134px; }
+.office-smallAvatar { transition: opacity .5s, transform .5s; }
+.office-away { opacity: .15; transform: translateY(-22px) scale(.8); }
+@media (prefers-reduced-motion: reduce) { .office-smallAvatar { transition: none; } }
+@media (max-width: 1000px) { .office-jobDeskGrid { grid-template-columns: 1fr; } }
+@media (max-width: 460px) { .office-deskThree { right: 2%; width: 46%; } }
+
+/* --- Free-text intake and simulator controls --- */
+.office-field textarea { font: inherit; font-size: 13px; color: var(--ink); padding: 10px; border: 1px solid #cdd4c5; background: #fffef9; border-radius: 7px; resize: vertical; }
+.office-field textarea:focus-visible { outline: 3px solid #a34f2e; outline-offset: 2px; }
+.office-formActions { display: flex; gap: 10px; align-items: stretch; }
+.office-formActions .office-hireButton { flex: 1; }
+.office-conversation { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.office-conversation li { font-size: 12px; line-height: 1.6; padding: 9px 11px; border-radius: 9px; max-width: 92%; }
+.office-conversation strong { display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
+.office-saidYou { background: #e5edd8; justify-self: end; }
+.office-saidDispatcher { background: #f6e6d6; color: #5c3b22; }
+.office-dispatcherReply { font-size: 12px; line-height: 1.6; padding: 10px 12px; border-radius: 8px; margin: 12px 0 0; }
+.office-reply-info { background: #edf2e5; color: #3f5a34; }
+.office-reply-unsupported { background: #fbf1d9; color: #6b4e0f; border: 1px solid #e6cf98; }
+.office-reply-error { background: #f7dede; color: #8a2424; }
+.office-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; font-size: 10px; color: var(--muted); }
+.office-examples button { border: 1px solid var(--line); background: #f5f6ee; border-radius: 14px; padding: 4px 9px; font-size: 10px !important; color: var(--ink); }
+.office-examples button:hover { background: #e5edd8; }
+.office-jobRequest { font-size: 12px; font-style: italic; color: #4d5c52; margin: 6px 0 0; }
+.office-simControls { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 20px; align-items: start; border: 1px dashed #b6a3e0; background: #faf8ff; border-radius: 14px; padding: 18px 22px; margin-bottom: 24px; }
+.office-simControls h2 { margin: 0; font-size: 16px; font-weight: 550; }
+.office-simControls .office-eyebrow { display: flex; gap: 8px; align-items: center; }
+.office-faults { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.office-faults .office-jobType:has(input:checked) { background: #ece6fb; border-color: #6d4bc4; }
+.office-simNote { color: #5b3fa6; }
+.office-visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 1000px) { .office-simControls { grid-template-columns: 1fr; } .office-faults { grid-template-columns: 1fr; } }
+
+/* Map is the first workspace view; reception holds the unchanged Dispatcher intake. */
+.office-office .office-layout { margin-bottom: 26px; }
+.office-office .office-floor { --office-chair-y: 120px; }
+.office-office .office-pageHeading .office-reset { text-decoration: none; font-size: 12px; }
+.office-office .office-entry { left: 12%; }
+.office-door { position: absolute; bottom: -10px; left: 15%; width: 22%; height: 11px; background: #f5f5ed; border-left: 3px solid #9eaf94; border-right: 3px solid #9eaf94; }
+.office-savedJobsHeading { display: flex; justify-content: space-between; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+.office-savedJobsHeading h2 { margin: 0; }
+.office-savedJobsHeading a, .office-workflowLink a { color: #3f5a4c; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+.office-workflowLink { margin: 14px 0 0; }
+.office-demoControls { padding: 19px 24px; border: 1px solid var(--line); background: #eff1e7; border-radius: 10px; margin-bottom: 24px; }
+.office-demoControls > summary { cursor: pointer; font-size: 12px; font-weight: 600; }
+.office-demoControls[open] > summary { margin-bottom: 20px; }
+.office-demoControls .office-simControls { margin-bottom: 18px; }
+.office-panel .office-jobForm { margin: 24px 0; }
+@media (min-width: 1450px) { .office-office .office-floor { --office-chair-y: 141px; } }
+
+/* --- Office (workspace) switcher --- */
+.office-header { gap: 16px; }
+.office-switcher { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-right: auto; margin-left: 28px; }
+.office-switcherLabel { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: 1.3px; font-weight: 650; color: var(--muted); text-transform: uppercase; }
+.office-switcher select, .office-newOffice input { font: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--ink); padding: 8px 10px; border: 1px solid #cdd4c5; background: #fdfdf8; border-radius: 7px; max-width: 280px; }
+.office-switcher select:focus-visible, .office-newOffice input:focus-visible { outline: 3px solid #a34f2e; outline-offset: 2px; }
+.office-newOffice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.office-newOffice .office-errorText { margin: 0; }
+.office-loading { padding: 40px; font-size: 13px; color: #66736b; }
+@media (max-width: 780px) { .office-header { height: auto; flex-wrap: wrap; padding: 14px 20px; } .office-switcher { margin-left: 0; order: 3; width: 100%; } }
+
+.office-header { min-height: 84px; height: auto; flex-wrap: wrap; padding-top: 18px; padding-bottom: 18px; }
+.office-switcher { margin-left: 12px; }
+@media (max-width: 780px) { .office-switcher { margin-left: 0; } .office-headerBadges { justify-content: flex-start; } }
+
+.office-requestDock { padding: 0 25px 24px; }
+.office-requestDock .office-jobForm { margin-top: 0; }
+
+.office-door { bottom: 0; height: 10px; }
+.office-office .office-entry { left: 18%; bottom: 14px; }
+.office-reception .office-smallAvatar { animation: none; }
+
+.office-workerReport { margin-top: 24px; }
+.office-workerReport > h3 { font-size: 17px; font-weight: 550; line-height: 1.5; margin-bottom: 12px; }
+.office-workerReport .office-repairReport { margin-top: 16px; }
+@media (max-width: 460px) {
+  .office-switcherLabel { min-width: 0; max-width: 100%; flex: 1 1 220px; }
+  .office-switcherLabel select { min-width: 0; flex: 1 1 auto; }
+  .office-newOffice { max-width: 100%; }
+  .office-newOffice input { min-width: 0; max-width: 100%; }
+}
+.office-viewer { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-left: 8px; }
+.office-viewer strong { color: var(--ink); font-weight: 600; }
+.office-viewer a { text-decoration: none; color: var(--ink); }
+
+.office-characterIdentity { display: flex; gap: 16px; align-items: center; }
+.office-characterIdentity h3 { margin: 0 0 5px; font-size: 22px; font-weight: 650; letter-spacing: -.5px; }
+.office-characterIdentity p { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.office-characterVoice { margin: 18px 0; padding: 12px 14px; background: #f4f2e9; border-left: 3px solid #728b78; border-radius: 0 5px 5px 0; font-size: 13px; line-height: 1.65; color: #384e49; }
+.office-viewReport { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid #42665b; border-radius: 6px; background: #42665b; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; margin: 0 0 20px; min-height: 44px; }
+.office-viewReport:hover { background: #304f46; }
+.office-viewReport:focus-visible, .office-reportDetails > summary:focus-visible { outline: 3px solid #a34f2e; outline-offset: 3px; }
+.office-reportDetails { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; }
+.office-reportDetails > summary { cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.6; min-height: 32px; }
+.office-workerReport:focus { outline: none; }
+.office-marketLink { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 16px; padding: 11px 13px; border: 1px dashed #9fb3a3; border-radius: 7px; color: #2e493e; font-size: 12px; font-weight: 600; text-decoration: none; background: #f4f7ef; }
+.office-marketLink:hover { background: #e9f0e3; }
+.office-recommendation .office-marketLink { margin: 12px 0 0; }
+
+.office-characterIdentity > div { min-width: 0; }
+.office-characterIdentity h3 { overflow-wrap: anywhere; }
+/* Gemini Dispatcher, CSV attachment, hire terms, demo meter, hire history */
+.office-geminiBadge { border-color: #b8cdf3 !important; background: #eef3fd !important; color: #1d3f8f !important; }
+.office-geminiBadge > span { background: #3b7be8 !important; }
+.office-csvAttach { margin: 4px 0 12px; border: 1px dashed #c9d2c0; border-radius: 7px; padding: 8px 11px; font-size: 12px; }
+.office-csvAttach > summary { cursor: pointer; font-weight: 600; color: #2e493e; min-height: 24px; line-height: 24px; }
+.office-csvAttach textarea { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 12px; }
+.office-csvFile { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11.5px; margin: 6px 0; color: var(--muted); }
+.office-terms { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; display: grid; gap: 8px; }
+.office-terms legend { font-size: 12px; font-weight: 650; padding: 0 4px; }
+.office-terms > label:not(.office-field) { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; cursor: pointer; }
+.office-terms > label > span { display: grid; gap: 2px; }
+.office-terms small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.office-keepRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin: 6px 0; }
+.office-meter { display: flex; align-items: center; gap: 7px; font-size: 12px; margin: 6px 0; color: #384e49; font-variant-numeric: tabular-nums; }
+.office-meterDot { width: 8px; height: 8px; border-radius: 50%; background: #9aa59a; }
+.office-meter[data-meter="running"] .office-meterDot { background: #d9822b; box-shadow: 0 0 0 3px #d9822b33; animation: meterPulse 1s ease-in-out infinite; }
+.office-meter[data-meter="stopped"] .office-meterDot { background: #2e493e; }
+@keyframes meterPulse { 50% { box-shadow: 0 0 0 6px #d9822b11; } }
+.office-instructions { margin: 14px 0; display: grid; gap: 6px; }
+.office-hireHistory, .office-permissions { margin: 12px 0; font-size: 12px; }
+.office-hireHistory > summary, .office-permissions > summary { cursor: pointer; }
+.office-hireHistory ol { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; color: #384e49; }
+.office-hireHistory li[data-kind="departed"] { color: #8b3e29; }
+.office-mapWalker[data-gone] { visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .office-meter[data-meter="running"] .office-meterDot { animation: none; } }
+
+.office-deskDetails { margin: 18px 0; padding: 12px 14px; border: 1px solid #b7cbd8; border-left: 3px solid #2f79a9; border-radius: 4px; background: #edf4f7; }
+.office-deskDetails h3 { margin: 0 0 6px; font-size: 13px; color: #244c68; }
+.office-deskDetails p { margin: 5px 0; font-size: 11px; color: #4c6778; line-height: 1.65; }
+/* Text the Dispatcher */
+.office-sms { margin: 18px 0; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #fbfaf4; }
+.office-smsLinks { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; font-size: 12px; }
+.office-smsLinks li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.office-smsCode { margin: 10px 0 4px; padding: 10px 12px; border: 1px dashed #9fb3a3; border-radius: 7px; background: #f4f7ef; font-size: 12px; }
+.office-smsCode p { margin: 0 0 6px; }
+.office-smsCodeValue { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 22px !important; font-weight: 700; letter-spacing: 3px; color: #2e493e; }
+.office-smsJob strong { font-family: var(--font-geist-mono), ui-monospace, monospace; letter-spacing: 1px; }

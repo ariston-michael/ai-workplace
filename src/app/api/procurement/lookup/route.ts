@@ -1,12 +1,6 @@
-import {
-  buildGoal,
-  buildSearchUrl,
-  normalizeResult,
-  validateLookupRequest,
-  type LookupError,
-  type LookupResponse,
-} from "@/lib/procurement";
-import { getTinyFishApiKey, runTinyFish } from "@/lib/tinyfish.server";
+import { validateLookupRequest, type LookupError, type LookupResponse } from "@/lib/procurement";
+import { lookupPart, procurementMode } from "@/lib/procurement-provider.server";
+import { requireViewer } from "@/lib/workplace/runtime.server";
 
 const STATUS_BY_CODE: Record<LookupError["code"], number> = {
   INVALID_REQUEST: 400,
@@ -27,7 +21,12 @@ function errorResponse(error: LookupError) {
   });
 }
 
+// Uses the fixture unless PROCUREMENT_MODE=live, so local testing spends no TinyFish credits.
 export async function POST(request: Request) {
+  // Live mode spends TinyFish credits, so the lookup requires a signed-in user.
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -40,35 +39,11 @@ export async function POST(request: Request) {
   if (!validated.ok) return errorResponse(validated.error);
   const { partName, supplier } = validated;
 
-  const apiKey = getTinyFishApiKey();
-  if (!apiKey) {
-    return errorResponse({
-      code: "MISSING_API_KEY",
-      message: "TINYFISH_API_KEY is not set. Add it to .env.local and restart the dev server.",
-    });
+  const mode = procurementMode();
+  const response = await lookupPart(partName, supplier, mode);
+  if (!response.ok) {
+    console.error(`[procurement] ${supplier.id} ${mode} lookup failed: ${response.error.code}`);
+    return errorResponse(response.error);
   }
-
-  const started = Date.now();
-  const outcome = await runTinyFish({
-    apiKey,
-    url: buildSearchUrl(supplier, partName),
-    goal: buildGoal(supplier, partName),
-    browserProfile: supplier.browserProfile,
-  });
-  const durationMs = Date.now() - started;
-
-  if (!outcome.ok) {
-    console.error(`[procurement] ${supplier.id} lookup failed after ${durationMs}ms: ${outcome.error.code}`);
-    return errorResponse(outcome.error);
-  }
-
-  const result = normalizeResult({
-    raw: outcome.result,
-    partName,
-    supplier,
-    runId: outcome.runId,
-    steps: outcome.steps,
-    durationMs,
-  });
-  return Response.json({ ok: true, result } satisfies LookupResponse);
+  return Response.json(response);
 }
