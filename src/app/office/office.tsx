@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { workerMovement } from "@/lib/workplace/movement";
 import "./office.css";
 import { CameraIncidentReport } from "./repair-incident";
 import { SCENARIOS } from "@/lib/camera-incident";
@@ -47,8 +49,8 @@ function ModeBadge({ mode }: { mode: ReportMode }) {
   return <span className={`office-modeBadge office-mode-${mode}`}>{text}</span>;
 }
 
-function Station({ worker, station, label, selected, onClick, status, away }: {
-  worker?: AvatarLike & { role: string }; station: string; label: string; selected: boolean; onClick: () => void; status?: string; away?: boolean;
+function Station({ worker, station, label, selected, onClick, status, away, hideWorker }: {
+  worker?: AvatarLike & { role: string }; station: string; label: string; selected: boolean; onClick: () => void; status?: string; away?: boolean; hideWorker?: boolean;
 }) {
   return (
     <button type="button" className={`office-station ${station} ${selected ? "office-selected" : ""} ${!worker ? "office-vacant" : ""}`}
@@ -56,7 +58,7 @@ function Station({ worker, station, label, selected, onClick, status, away }: {
       aria-pressed={selected} aria-controls="office-panel">
       <span className="office-stationArt" aria-hidden="true">
         <span className="office-chair" />
-        {worker && <Avatar key={worker.initials} worker={worker} small away={away} />}
+        {worker && !hideWorker && <Avatar key={worker.initials} worker={worker} small away={away} />}
         <span className="office-desk"><span className="office-monitor" /><span className="office-keyboard" /><span className="office-notebook" /><span className="office-cup" /></span>
         {!worker && <span className="office-add">+</span>}
       </span>
@@ -164,7 +166,7 @@ export default function Office() {
   return (
     <main className="office-office">
       <header className="office-header">
-        <a className="office-brand" href="/office"><span className="office-logo" aria-hidden="true">a<span>i</span></span> AI Workplace</a>
+        <Link className="office-brand" href="/"><span className="office-logo" aria-hidden="true">a<span>i</span></span> AI Workplace</Link>
         <div className="office-headerBadges">
           {state && (state.procurementMode === "live"
             ? <span className="office-demoBadge office-liveBadge"><span /> PROCUREMENT: LIVE TINYFISH</span>
@@ -176,24 +178,10 @@ export default function Office() {
       <div className="office-workspace">
         <div className="office-pageHeading">
           <div><p className="office-eyebrow">WORKSPACE / OFFICE 01</p><h1>A little space. A capable team.</h1><p>Give the Dispatcher a job. It checks your team’s skills, assigns a qualified worker, or recommends a hire.</p></div>
-          <button className="office-reset" type="button" onClick={resetDemo}>Reset demo <span aria-hidden="true">↺</span></button>
+          <Link className="office-reset" href="/">← Workspaces</Link>
         </div>
 
         {loadError && <p className="office-errorText" role="alert">{loadError}</p>}
-
-        <section className="office-incident office-jobDesk" aria-labelledby="jobs-title">
-          <div className="office-jobDeskGrid">
-            <RequestForm onReply={onRequestReply} disabled={!state} />
-            <div>
-              <h2 id="jobs-title" className="office-jobsTitle">Jobs and reports</h2>
-              {!state ? <p className="office-muted">Loading saved workspace…</p>
-                : state.jobs.length === 0 ? <p className="office-muted">No jobs yet. Submit one to the Dispatcher.</p>
-                : <ol className="office-jobList">{state.jobs.map(job => <JobCard key={job.id} job={job} state={state} onHire={hire} />)}</ol>}
-            </div>
-          </div>
-        </section>
-
-        {state && <SimulatorControls fault={state.simulator.cameraFault} onChange={setFault} />}
 
         <div className="office-layout">
           <section className="office-officeCard" aria-labelledby="floor-title">
@@ -208,14 +196,16 @@ export default function Office() {
                 const h = hireAt(d.desk);
                 const active = h ? jobOf(h) : undefined;
                 const status = active ? (active.status === "working" ? "Out on a job" : "Job assigned") : h ? "Ready" : undefined;
-                return <Station key={d.desk} worker={h} station={d.className} label={d.label} status={status} away={active?.status === "working"}
+                return <Station key={d.desk} worker={h} station={d.className} label={d.label} status={status} hideWorker
                   selected={h ? selectedHire?.id === h.id : selectedDesk === d.desk}
                   onClick={() => select(h ? { hireId: h.id } : { desk: d.desk })} />;
               })}
+              {team.map(hire => <WorkerMarker key={hire.id} hire={hire} jobs={state?.jobs ?? []} onSelect={() => select({ hireId: hire.id })} />)}
               <div className="office-divider" aria-hidden="true" />
               <span className="office-receptionLabel">RECEPTION</span>
               <Station worker={DISPATCHER} station="office-reception" label="Reception" status={state?.jobs.some(j => j.status === "needs_worker") ? "Waiting for your hire approval" : undefined}
-                selected={selection === "dispatcher"} onClick={() => select("dispatcher")} />
+                selected={selection === "dispatcher" || selection === null} onClick={() => select("dispatcher")} />
+              <span className="office-door" aria-hidden="true" />
               <span className="office-entry" aria-hidden="true">WELCOME IN ↑</span>
             </div>
             <div className="office-floorFooter"><span aria-hidden="true">↖</span> Select a desk to meet a worker or an empty desk to open the marketplace.</div>
@@ -233,12 +223,13 @@ export default function Office() {
               </>
             ) : selectedHire && state ? (
               <WorkerPanel hire={selectedHire} state={state} headingRef={panelHeading} />
-            ) : selection === "dispatcher" ? (
+            ) : (selection === "dispatcher" || selection === null) ? (
               <>
                 <div className="office-panelHeader"><p className="office-eyebrow">WORKER DETAILS</p><h2 id="panel-title" ref={panelHeading} tabIndex={-1}>Dispatcher</h2></div>
                 <div className="office-panelBody">
                   <div className="office-profile"><Avatar worker={DISPATCHER} /><span className="office-status"><span /> Reception · always on</span></div>
                   <p className="office-description">{DISPATCHER.specialty}</p>
+                  <RequestForm onReply={onRequestReply} disabled={!state} />
                   <h3 className="office-sectionLabel">RECENT DECISIONS</h3>
                   <ul className="office-eventList">
                     {(state?.jobs ?? []).flatMap(j => j.events.filter(e => e.actor === "Dispatcher").map(e => ({ ...e, job: j.title }))).sort((a, b) => b.at - a.at).slice(0, 5)
@@ -263,11 +254,48 @@ export default function Office() {
             )}
           </aside>
         </div>
+        <section className="office-incident office-jobDesk" aria-labelledby="jobs-title">
+          <div className="office-savedJobsHeading"><h2 id="jobs-title" className="office-jobsTitle">Jobs and reports</h2><Link href={`/workflow?workspace=${encodeURIComponent(state?.workspaceId ?? "demo")}`}>View workflow history ↗</Link></div>
+          {!state ? <p className="office-muted">Loading saved workspace…</p>
+            : state.jobs.length === 0 ? <p className="office-muted">No jobs yet. Give the Dispatcher a request at reception.</p>
+            : <ol className="office-jobList">{state.jobs.map(job => <JobCard key={job.id} job={job} state={state} onHire={hire} />)}</ol>}
+        </section>
+        <details className="office-demoControls"><summary>Demo controls</summary>
+          {state && <SimulatorControls fault={state.simulator.cameraFault} onChange={setFault} />}
+          <button className="office-reset" type="button" onClick={resetDemo}>Reset demo</button>
+          <p className="office-finePrint">Reset deletes this workspace’s saved hires, jobs and reports.</p>
+        </details>
         <p className="office-announcement" role="status">{announcement}</p>
         <footer className="office-pageFooter"><span>Built around the work. And the people directing it.</span><span>Team, jobs and reports are saved locally in SQLite.</span></footer>
       </div>
     </main>
   );
+}
+
+function WorkerMarker({ hire, jobs, onSelect }: { hire: HireView; jobs: JobView[]; onSelect: () => void }) {
+  const movement = workerMovement(hire, jobs);
+  const observed = useRef<{ initialized: boolean; key: string | null }>({ initialized: false, key: null });
+  const [returnEvent, setReturnEvent] = useState<string | null>(null);
+  useEffect(() => {
+    const isNew = observed.current.initialized && observed.current.key !== movement.eventKey;
+    observed.current = { initialized: true, key: movement.eventKey };
+    if (!isNew || (movement.kind !== "returned" && movement.kind !== "failed")) return;
+    const frame = requestAnimationFrame(() => setReturnEvent(movement.eventKey));
+    return () => cancelAnimationFrame(frame);
+  }, [movement.eventKey, movement.kind]);
+  const style = {
+    "--desk-x": hire.desk === "workstation-01" ? "27%" : "73%",
+    "--desk-y": hire.desk === "desk-03" ? "calc(100% - 150px)" : "var(--office-chair-y, 120px)",
+    "--task-x": hire.desk === "workstation-01" ? "40%" : "64%",
+    "--task-y": "54%",
+  } as CSSProperties;
+  const returning = returnEvent !== null && returnEvent === movement.eventKey && movement.kind !== "working";
+  return <button type="button" style={style} onClick={onSelect}
+    className={`office-workerMarker ${movement.kind === "working" ? "office-markerWorking" : ""} ${returning ? "office-markerReturned" : ""}`}
+    data-movement={movement.kind} aria-label={`${hire.role}: ${movement.kind === "working" ? "working on a job" : "at their desk"}. View worker`}>
+    <Avatar worker={hire} small />
+    {movement.kind === "working" && <span className="office-markerCaption">Working</span>}
+  </button>;
 }
 
 type RequestReply =
@@ -441,6 +469,7 @@ function JobCard({ job, state, onHire }: { job: JobView; state: WorkplaceState; 
         </div>
       )}
 
+      <p className="office-workflowLink"><Link href={`/workflow?workspace=${encodeURIComponent(state.workspaceId)}&job=${encodeURIComponent(job.id)}`}>View this job’s workflow ↗</Link></p>
       <details className="office-jobHistory">
         <summary>Job history ({job.events.length})</summary>
         <ol>{job.events.map((e, i) => <li key={i}><strong>{e.actor}:</strong> {e.text}</li>)}</ol>
@@ -483,6 +512,7 @@ function WorkerPanel({ hire, state, headingRef }: { hire: HireView; state: Workp
           <div><dt>Jobs completed</dt><dd>{hire.completedJobs}</dd></div>
           <div><dt>Current job</dt><dd>{active?.title ?? "None"}</dd></div>
         </dl>
+        {latest && <p className="office-workflowLink"><Link href={`/workflow?workspace=${encodeURIComponent(state.workspaceId)}&job=${encodeURIComponent(latest.id)}`}>View latest job’s workflow ↗</Link></p>}
         {latest?.report && <div className="office-note"><span aria-hidden="true">↳</span><p>Latest report ({latest.report.mode.toUpperCase()}): {latest.report.summary}</p></div>}
       </div>
     </>

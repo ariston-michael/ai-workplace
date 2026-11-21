@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ACTION_LABEL } from "@/lib/camera-incident";
 import { SKILLS } from "@/lib/workplace/catalog";
 import type { JobView, ReportMode } from "@/lib/workplace/types";
@@ -70,7 +71,8 @@ function JobDetail({ job, headingRef }: { job: JobView; headingRef: React.RefObj
     <header className="workflow-detailHeader"><div className="workflow-badges"><span className="workflow-status">{statusLabels[job.status]}</span>{openIncident && <span className="workflow-openLabel">Incident still open</span>}{job.report && <Mode mode={job.report.mode} />}{!job.report && job.type === "camera_incident" && <Mode mode="simulated" />}</div><h2 ref={headingRef} tabIndex={-1} id="selected-job-title">{job.title}</h2><p className="workflow-id">{job.id} · {timestamp(job.createdAt)}</p></header>
     <div className="workflow-story">
       <section aria-labelledby="request-title"><p className="workflow-step">01 / THE REQUEST</p><h3 id="request-title">What the user asked</h3>
-        <dl className="workflow-facts">{"partName" in job.input ? <><div><dt>Part</dt><dd>{job.input.partName}</dd></div><div><dt>Supplier</dt><dd>{job.input.supplierName}</dd></div></> : <div><dt>SIMULATED case</dt><dd>{job.input.scenarioTitle}</dd></div>}<div><dt>Required skill</dt><dd>{SKILLS[job.requiredSkill]}</dd></div></dl>
+        <dl className="workflow-facts">{"partName" in job.input ? <><div><dt>Part</dt><dd>{job.input.partName}</dd></div><div><dt>Supplier</dt><dd>{job.input.supplierName}</dd></div></> : <div><dt>Station</dt><dd>{job.input.station ?? job.title}</dd></div>}<div><dt>Required skill</dt><dd>{SKILLS[job.requiredSkill]}</dd></div></dl>
+        {job.input.request && <blockquote>{job.input.request}</blockquote>}
         {job.events.filter(event => event.actor === "You").map((event, index) => <blockquote key={index}>{event.text}</blockquote>)}
       </section>
       <section aria-labelledby="dispatcher-title"><p className="workflow-step">02 / THE DISPATCHER</p><h3 id="dispatcher-title">Why this worker or hire</h3>
@@ -92,20 +94,28 @@ function JobDetail({ job, headingRef }: { job: JobView; headingRef: React.RefObj
 }
 
 export default function Workflow() {
+  const query = useSearchParams();
+  const workspaceId = query.get("workspace") || "demo";
+  return <WorkflowContent key={workspaceId} workspaceId={workspaceId} requestedJobId={query.get("job")} />;
+}
+
+function WorkflowContent({ workspaceId, requestedJobId }: { workspaceId: string; requestedJobId: string | null }) {
+  const router = useRouter();
   const [jobs, setJobs] = useState<JobView[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const heading = useRef<HTMLHeadingElement>(null);
   const focusOnLoad = useRef(false);
-  const selected = jobs?.find(job => job.id === selectedId) ?? jobs?.[0];
+  const selected = requestedJobId ? jobs?.find(job => job.id === requestedJobId) : jobs?.[0];
+  const officeHref = `/office?workspace=${encodeURIComponent(workspaceId)}`;
 
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       try {
-        const response = await fetch("/api/workflow", { cache: "no-store", signal: controller.signal });
+        const response = await fetch(`/api/workflow?workspace=${encodeURIComponent(workspaceId)}`, { cache: "no-store", signal: controller.signal });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || "Saved jobs could not be loaded.");
         setJobs(data.jobs);
@@ -118,27 +128,28 @@ export default function Workflow() {
     }
     void load();
     return () => controller.abort();
-  }, [refreshKey]);
+  }, [refreshKey, workspaceId]);
 
   useEffect(() => {
     if (focusOnLoad.current) { heading.current?.focus(); focusOnLoad.current = false; }
-  }, [selectedId]);
+  }, [requestedJobId]);
 
   function selectJob(id: string) {
-    if (selectedId === id || selected?.id === id) { heading.current?.focus(); return; }
+    if (requestedJobId === id || selected?.id === id) { heading.current?.focus(); return; }
     focusOnLoad.current = true;
-    setSelectedId(id);
+    router.replace(`/workflow?workspace=${encodeURIComponent(workspaceId)}&job=${encodeURIComponent(id)}`, { scroll: false });
   }
 
   return <main className="workflow-page">
-    <header className="workflow-header"><Link href="/office" className="workflow-brand"><span aria-hidden="true">ai</span> AI Workplace</Link><span className="workflow-readonly">READ-ONLY · SAVED HISTORY</span></header>
+    <header className="workflow-header"><Link href={officeHref} className="workflow-brand"><span aria-hidden="true">ai</span> AI Workplace</Link><span className="workflow-readonly">READ-ONLY · SAVED HISTORY</span></header>
     <div className="workflow-workspace">
       <div className="workflow-intro"><div><p className="workflow-eyebrow">WORKSPACE / WORKFLOW</p><h1>Follow the work.</h1><p>From the user’s request to the worker’s findings. Every detail comes from saved jobs and history.</p></div><button type="button" className="workflow-refresh" disabled={loading} onClick={() => { setLoading(true); setRefreshKey(value => value + 1); }}>{loading ? "Loading…" : "Refresh saved jobs"}</button></div>
       <div className="workflow-loadStatus" role="status">{loading ? "Loading saved jobs…" : jobs ? `${jobs.length} saved ${jobs.length === 1 ? "job" : "jobs"} loaded.` : ""}</div>
       {error && <p className="workflow-error" role="alert">{error}{jobs && " Showing the last loaded snapshot."}</p>}
-      {jobs && jobs.length === 0 && <section className="workflow-empty"><span aria-hidden="true">↳</span><h2>No saved jobs yet.</h2><p>Jobs submitted in the office will appear here with their saved decisions and reports.</p><Link href="/office">Open the office ↗</Link></section>}
+      {jobs && jobs.length === 0 && <section className="workflow-empty"><span aria-hidden="true">↳</span><h2>No saved jobs yet.</h2><p>Jobs submitted in the office will appear here with their saved decisions and reports.</p><Link href={officeHref}>Open the office ↗</Link></section>}
+      {jobs && requestedJobId && !selected && <p className="workflow-error" role="alert">That job is not in this workspace’s saved history. Select another saved job below.</p>}
       {jobs && jobs.length > 0 && <div className="workflow-layout"><nav className="workflow-jobNav" aria-label="Saved jobs"><div className="workflow-navHeading"><h2>Job history</h2><span>Latest 50</span></div><ol>{jobs.map(job => <li key={job.id}><button type="button" aria-current={selected?.id === job.id ? "true" : undefined} aria-controls="selected-job-title" onClick={() => selectJob(job.id)}><div className="workflow-jobMeta"><span>{statusLabels[job.status]}</span>{job.report && <Mode mode={job.report.mode} />}{!job.report && job.type === "camera_incident" && <Mode mode="simulated" />}</div><strong>{job.title}</strong><small>{timestamp(job.createdAt)}</small>{job.report?.body.type === "camera_incident" && job.report.body.incident.status === "open" && <span className="workflow-openLabel">Report ready · incident open</span>}</button></li>)}</ol></nav>{selected && <JobDetail job={selected} headingRef={heading} />}</div>}
-      <footer className="workflow-footer"><Link href="/office">← Back to the office</Link><span>Saved records only · refresh to see changes</span></footer>
+      <footer className="workflow-footer"><Link href={officeHref}>← Back to the office</Link><span>Saved records only · refresh to see changes</span></footer>
     </div>
   </main>;
 }

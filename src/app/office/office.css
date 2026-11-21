@@ -239,3 +239,27 @@
 .office-simNote { color: #5b3fa6; }
 .office-visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 1000px) { .office-simControls { grid-template-columns: 1fr; } .office-faults { grid-template-columns: 1fr; } }
+
+/* Map is the first workspace view; reception holds the unchanged Dispatcher intake. */
+.office-office .office-layout { margin-bottom: 26px; }
+.office-office .office-floor { --office-chair-y: 120px; }
+.office-office .office-pageHeading .office-reset { text-decoration: none; font-size: 12px; }
+.office-office .office-entry { left: 12%; }
+.office-door { position: absolute; bottom: -10px; left: 15%; width: 22%; height: 11px; background: #f5f5ed; border-left: 3px solid #9eaf94; border-right: 3px solid #9eaf94; }
+.office-workerMarker { position: absolute; z-index: 5; left: var(--desk-x); top: var(--desk-y); transform: translate(-50%, -50%); border: 0; padding: 0; border-radius: 50%; background: transparent; transition: left .9s ease, top .9s ease; }
+.office-workerMarker .office-smallAvatar { position: static; animation: none; display: flex; }
+.office-workerMarker.office-markerWorking { left: var(--task-x); top: var(--task-y); }
+.office-workerMarker.office-markerReturned { animation: officeWorkerReturn .9s ease both; }
+.office-markerCaption { position: absolute; top: 43px; left: 50%; transform: translateX(-50%); font-size: 9px; border: 1px solid #dce0d5; background: #fffef5; padding: 3px 7px; border-radius: 5px; }
+.office-savedJobsHeading { display: flex; justify-content: space-between; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+.office-savedJobsHeading h2 { margin: 0; }
+.office-savedJobsHeading a, .office-workflowLink a { color: #3f5a4c; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+.office-workflowLink { margin: 14px 0 0; }
+.office-demoControls { padding: 19px 24px; border: 1px solid var(--line); background: #eff1e7; border-radius: 10px; margin-bottom: 24px; }
+.office-demoControls > summary { cursor: pointer; font-size: 12px; font-weight: 600; }
+.office-demoControls[open] > summary { margin-bottom: 20px; }
+.office-demoControls .office-simControls { margin-bottom: 18px; }
+.office-panel .office-jobForm { margin: 24px 0; }
+@keyframes officeWorkerReturn { from { left: var(--task-x); top: var(--task-y); } to { left: var(--desk-x); top: var(--desk-y); } }
+@media (min-width: 1450px) { .office-office .office-floor { --office-chair-y: 141px; } }
+@media (prefers-reduced-motion: reduce) { .office-workerMarker { transition: none; } .office-workerMarker.office-markerReturned { animation: none; } }

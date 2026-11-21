@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { openDb } from "../src/lib/workplace/db.server.ts";
 import { readSavedJobs } from "../src/lib/workflow/read-jobs.server.ts";
-import { submitJob, approveHire, runJob, getState, type ServiceDeps } from "../src/lib/workplace/service.server.ts";
+import { submitJob, approveHire, runJob, getState, setCameraFault, type ServiceDeps } from "../src/lib/workplace/service.server.ts";
 import { lookupPart } from "../src/lib/procurement-provider.server.ts";
 
 process.env.PROCUREMENT_FIXTURE_DELAY_MS = "0";
@@ -55,6 +55,7 @@ test("workflow preserves report completion separately from the unresolved camera
   const fixture = setup();
   const { db, deps, file } = fixture;
   try {
+    setCameraFault(db, "demo", "service-stopped-no-frame");
     const request = submitJob(db, deps, "demo", { clientRequestId: "workflow-camera-open", type: "camera_incident", input: { scenarioId: "service-stopped-no-frame" } });
     assert.ok(request.ok);
     await runJob(db, deps, request.jobId);
