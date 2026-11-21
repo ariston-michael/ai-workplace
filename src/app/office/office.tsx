@@ -178,12 +178,21 @@ function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arriv
   // Workers who left while this page was open: they walk out before disappearing.
   const [leaving, setLeaving] = useState<HireView[]>([]);
   const teamIds = useRef<Set<string> | null>(null);
+  const observedHires = useRef<Set<string> | null>(null);
   const apply = useCallback((next: WorkplaceState) => {
     const before = teamIds.current;
+    const all = [...next.team, ...next.formerHires];
+    // Another channel (SMS) can hire and finish a short job between polls.
+    // Animate its saved arrival/report/departure once, even if it is already a
+    // former hire when first observed. The initial snapshot never replays history.
+    const fresh = observedHires.current ? all.filter(h => !observedHires.current!.has(h.id)) : [];
+    const freshIds = new Set(fresh.map(h => h.id));
+    if (fresh.length) setArrivals(ids => new Set([...ids, ...freshIds]));
     if (before) {
-      const gone = next.formerHires.filter(h => before.has(h.id));
+      const gone = next.formerHires.filter(h => before.has(h.id) || freshIds.has(h.id));
       if (gone.length) setLeaving(list => [...list.filter(l => !gone.some(g => g.id === l.id)), ...gone]);
     }
+    observedHires.current = new Set([...(observedHires.current ?? []), ...all.map(h => h.id)]);
     teamIds.current = new Set(next.team.map(h => h.id));
     setState(next);
   }, []);
@@ -214,12 +223,14 @@ function OfficeView({ workspaceId, arrivedHireId }: { workspaceId: string; arriv
     if (arrivedHireId) router.replace(`/office?workspace=${encodeURIComponent(workspaceId)}`, { scroll: false });
   }, [arrivedHireId, router, workspaceId]);
 
-  // Poll while any job is assigned or running.
+  // External channels can submit work while this office is idle. Pause hidden
+  // tabs, refresh on return, and use the faster interval for known active jobs.
   const busy = state?.jobs.some(j => j.status === "queued" || j.status === "working") ?? false;
   useEffect(() => {
-    if (!busy) return;
-    const id = setInterval(refresh, 1000);
-    return () => clearInterval(id);
+    const visibleRefresh = () => { if (!document.hidden) void refresh(); };
+    const id = setInterval(visibleRefresh, busy ? 1000 : 2000);
+    document.addEventListener("visibilitychange", visibleRefresh);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", visibleRefresh); };
   }, [busy, refresh]);
 
   useEffect(() => {

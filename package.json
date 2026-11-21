@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mts",
     "test:marketplace": "node scripts/check-marketplace.mjs",
-    "test:sms": "node scripts/check-sms.mjs"
+    "test:sms": "node scripts/check-sms.mjs",
+    "test:integration": "npm run test:sms && npm run test:marketplace"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.33.0",

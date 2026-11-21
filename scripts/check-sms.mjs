@@ -92,6 +92,7 @@ try {
   const cookie = await encrypt({ user: { sub: "auth0|sms-owner", name: "Sam Owner", email: "sam@example.test", email_verified: true }, tokenSet: { accessToken: "fixture", expiresAt: now + 3600, scope: "openid profile email" }, internal: { sid: "sam", createdAt: now } }, secret, now + 3600);
   const as = { headers: { Cookie: `__session=${cookie}`, "Content-Type": "application/json" } };
   const ws = (await (await fetch(base + "/api/workspaces", as)).json()).primaryWorkspaceId;
+  const control = (await (await fetch(base + "/api/workspaces", { ...as, method: "POST", body: JSON.stringify({ name: "SMS isolation control" }) })).json()).workspace.id;
 
   console.log("\n== Webhook security");
   ok((await sms("hello", { token: "wrong-token" })).status === 403, "an invalid signature is rejected (403)");
@@ -122,6 +123,27 @@ try {
   let state = (await (await fetch(base + `/api/workspaces/${ws}`, as)).json()).state;
   ok(state.jobs.length === 1 && state.jobs[0].status === "needs_worker" && state.jobs[0].sms.code === jobCode, "exactly one job, waiting for approval");
 
+  // Observe the blue office before approval, using the exact same temporary DB
+  // as the signed webhook. Hold its next state refresh until after execution to
+  // prove a fast SMS-only hire is still animated when its working phase is missed.
+  const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? (existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined);
+  browser = await chromium.launch({ executablePath: chrome, headless: true });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+  await ctx.addCookies([{ name: "__session", value: cookie, url: base }]);
+  const page = await ctx.newPage();
+  const pageErrors = []; page.on("pageerror", error => pageErrors.push(error.message));
+  await page.goto(`${base}/office?workspace=${ws}`);
+  await page.locator(`.office-jobCard[data-job-id="${state.jobs[0].id}"]`).waitFor();
+  ok(await page.locator(".office-office").getAttribute("data-preview-branch") === "sms-office-integration", "testing the SMS + retro integration build");
+  ok(await page.locator(".office-pixelMap").evaluate(el => getComputedStyle(el).backgroundColor === "rgb(69, 169, 225)"), "the observed office is the blue tiled redesign");
+  let releasePoll;
+  const pollGate = new Promise(resolve => { releasePoll = resolve; });
+  let holdingPoll = true, heldPolls = 0;
+  await page.route(base + `/api/workspaces/${ws}`, async route => {
+    if (holdingPoll) { heldPolls++; await pollGate; }
+    await route.continue();
+  });
+
   console.log("\n== Approve by text (twice, and a duplicate delivery)");
   const approve = await sms(`APPROVE ${jobCode}`);
   ok(new RegExp(`Approved\\. Ro \\(Procurement Researcher\\) is hired for this job only and starting job ${jobCode}`).test(approve.reply), "APPROVE hires and starts the job", approve.reply);
@@ -146,17 +168,40 @@ try {
   const saved = (history.jobs ?? []).find(j => j.id === job.id);
   ok(saved && saved.report.id === job.report.id && saved.sms.code === jobCode, "the same job and report are in workflow history", JSON.stringify(history).slice(0, 300));
 
+  holdingPoll = false; releasePoll();
+  ok(heldPolls > 0, "office deliberately misses the fast execution between refreshes");
+  const hireId = job.hireId;
+  const actor = page.locator(`[data-worker-id="${hireId}"]`);
+  await actor.waitFor({ timeout: 10000 });
+  ok(await actor.getAttribute("data-retention") === "job", "the SMS-approved job-only hire appears automatically without reloading");
+  ok(await actor.locator(".office-mapSprite").evaluate(el => Math.round(el.getBoundingClientRect().width) === 39), "the SMS hire uses the larger pixel character");
+  await page.waitForFunction(id => document.querySelector(`[data-worker-id="${id}"]`)?.dataset.travel === "handover", hireId, { timeout: 20000 });
+  await actor.click();
+  await page.getByRole("link", { name: "View report", exact: true }).click();
+  const reportPanel = page.getByRole("region", { name: "Saved worker report", exact: true });
+  ok(/SAMPLE/.test(await reportPanel.innerText()) && /Raspberry Pi 5/.test(await reportPanel.innerText()), "SMS worker hands its actual saved report over in the blue office");
+  if (shots) await page.locator(".office-officeCard").screenshot({ path: path.join(shots, "sms-approved-blue-office.png") });
+  await actor.waitFor({ state: "detached", timeout: 15000 });
+  ok(true, "the SMS job-only hire walks out after reception handover");
+  await page.locator("#office-panel").getByRole("link", { name: /View latest job/ }).click();
+  await page.locator("#selected-job-title").waitFor();
+  ok(new URL(page.url()).searchParams.get("workspace") === ws && new URL(page.url()).searchParams.get("job") === job.id, "office report opens the SMS job in the same workspace history");
+  ok(/SAMPLE/.test(await page.locator(".workflow-detail").innerText()) && /Raspberry Pi 5/.test(await page.locator(".workflow-detail").innerText()), "workflow renders the same saved SMS report");
+  const controlState = (await (await fetch(base + `/api/workspaces/${control}`, as)).json()).state;
+  ok(controlState.jobs.length === 0 && controlState.team.length === 1, "another office in the same account has no SMS job, hire, or report");
+  const otherCookie = await encrypt({ user: { sub: "auth0|sms-other", name: "Other Account" }, tokenSet: { accessToken: "fixture", expiresAt: now + 3600 }, internal: { sid: "other", createdAt: now } }, secret, now + 3600);
+  const otherAuth = { headers: { Cookie: `__session=${otherCookie}` } };
+  for (const endpoint of [`/api/workspaces/${ws}`, `/api/workspaces/${ws}/sms`, `/api/workflow?workspace=${ws}&job=${job.id}`]) ok((await fetch(base + endpoint, otherAuth)).status === 404, "second account denied " + endpoint.split("?")[0]);
+  await page.goto(`${base}/office?workspace=${ws}`);
+  await page.locator(`.office-jobCard[data-job-id="${job.id}"]`).waitFor();
+  ok(await page.locator(`[data-worker-id="${hireId}"]`).count() === 0, "reload preserves history without replaying a departed SMS hire");
+  ok(pageErrors.length === 0, "no browser errors", pageErrors.join("\n"));
+
   console.log("\n== Zero provider calls");
   ok(tinyfishCalls.length === 0, "TinyFish calls: 0");
   ok(geminiCalls.length === 2, "Gemini mock called once per Dispatcher message (2), not for links, approvals or duplicates", geminiCalls.length);
 
   console.log("\n== Office shows the SMS panel and the job code");
-  const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? (existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined);
-  browser = await chromium.launch({ executablePath: chrome, headless: true });
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
-  await ctx.addCookies([{ name: "__session", value: cookie, url: base }]);
-  const page = await ctx.newPage();
-  await page.goto(`${base}/office?workspace=${ws}`);
   await page.getByRole("heading", { name: "Text the Dispatcher" }).or(page.locator("#sms-title")).first().waitFor();
   ok(/•••0123 · linked/.test(await page.locator(".office-sms").innerText()), "office lists the linked phone");
   await page.getByRole("button", { name: "Link another phone" }).click();
