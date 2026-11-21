@@ -159,3 +159,56 @@
 @media (max-width: 1000px) { .office-layout { grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); gap: 16px; } .office-workspace { padding-right: 3%; padding-left: 3%; } .office-floorHeader { padding: 0 14px; } .office-floor { margin: 0 8px; } .office-stationLabel { padding: 6px; } .office-stationLabel > span { font-size: 10px; } .office-panelBody, .office-panelHeader { padding: 20px; } .office-sofa { right: 7%; } }
 @media (max-width: 780px) { .office-layout { grid-template-columns: 1fr; } .office-panel { min-height: 0; } .office-workspace { padding: 28px 18px 20px; } .office-header { height: 70px; padding: 0 20px; } .office-pageHeading { align-items: flex-start; } .office-pageHeading h1 { max-width: 380px; } .office-floor { height: 530px; } .office-panelBody { padding: 24px; } .office-welcomeArt { height: 100px; } .office-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; } .office-steps li { margin: 0; } }
 @media (max-width: 460px) { .office-brand { font-size: 16px; } .office-demoBadge { font-size: 8px; padding: 7px 9px; } .office-pageHeading { flex-direction: column; gap: 14px; } .office-pageHeading h1 { letter-spacing: -1px; font-size: 28px; } .office-floorHeader { padding: 0 12px; } .office-floorHeader > span { font-size: 9px; } .office-floor { border-width: 7px; margin: 0 7px; } .office-station { width: 46%; } .office-inspection { left: 2%; } .office-openDesk { right: 2%; } .office-reception { left: 3%; width: 50%; } .office-stationLabel > span { font-size: 9px; } .office-stationLabel small { font-size: 8px; } .office-desk { left: 6%; width: 88%; } .office-plantOne { right: 15px; } .office-floorFooter { padding: 14px; font-size: 10px; } .office-panelHeader h2 { font-size: 24px; } .office-steps { grid-template-columns: 1fr; } .office-pageFooter { flex-direction: column; gap: 8px; } }
+
+/* --- Workplace core: job desk, recommendations, reports, third desk --- */
+.office-headerBadges { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.office-sampleBadge { background: #fbf1d9; border-color: #e6cf98 !important; color: #7a5a12; }
+.office-sampleBadge > span { background: #c49a2c !important; }
+.office-liveBadge { background: #e3f1e3; border-color: #9cc59c !important; color: #245a24; }
+.office-modeBadge { font-size: 9px; font-weight: 700; letter-spacing: 1px; border-radius: 4px; padding: 3px 6px; color: #fff; white-space: nowrap; }
+.office-mode-live { background: #2f7d32; }
+.office-mode-sample { background: #b07d10; }
+.office-mode-simulated { background: #6d4bc4; }
+.office-jobDeskGrid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.8fr); gap: 28px; align-items: start; }
+.office-jobForm h2, .office-jobsTitle { margin: 0 0 16px; font-size: 20px; font-weight: 500; letter-spacing: -.5px; }
+.office-jobTypes { border: 0; padding: 0; margin: 0 0 14px; display: grid; gap: 8px; }
+.office-jobTypes legend { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.office-jobType { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); background: #f5f6ee; border-radius: 9px; padding: 10px 12px; cursor: pointer; }
+.office-jobType:has(input:checked) { background: #e5edd8; border-color: #647d50; }
+.office-jobType span { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.office-jobType small { color: var(--muted); font-size: 10px; }
+.office-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+.office-field input, .office-field select { font: inherit; font-size: 13px; color: var(--ink); padding: 10px; border: 1px solid #cdd4c5; background: #fffef9; border-radius: 7px; }
+.office-field input:focus-visible, .office-field select:focus-visible { outline: 3px solid #a34f2e; outline-offset: 2px; }
+.office-hireButton:disabled { opacity: .55; cursor: default; }
+.office-errorText { color: #9b2f16; font-size: 12px; margin: 10px 0 0; }
+.office-jobList { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; max-height: 720px; overflow: auto; }
+.office-jobCard { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: #fffef9; }
+.office-job-needs_worker { border-color: #e2c08f; background: #fffaf0; }
+.office-jobHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.office-jobHead > strong { flex: 1 1 260px; font-weight: 600; line-height: 1.5; }
+.office-jobStatus { font-size: 10px; border-radius: 20px; padding: 4px 9px; border: 1px solid #d8dfcd; background: #edf2e5; color: #4e6541; white-space: nowrap; }
+.office-jobStatus-needs_worker { background: #f6e6d6; color: #874823; border-color: #e7c4a9; }
+.office-jobStatus-working, .office-jobStatus-queued { background: #e3ecf6; color: #2d4f75; border-color: #bcd0e6; }
+.office-jobStatus-failed { background: #f7dede; color: #8a2424; border-color: #e5b5b5; }
+.office-jobMeta { font-size: 11px; color: var(--muted); line-height: 1.7; margin: 6px 0 0; }
+.office-recommendation { margin-top: 12px; padding: 12px; border: 1px dashed #d7b98a; border-radius: 9px; }
+.office-recommendation .office-candidate { margin: 12px 0 0; }
+.office-candidateMeta { font-size: 11px !important; margin: 0 0 8px !important; }
+.office-skillMatch { background: #2e493e !important; color: #f7f8ed !important; }
+.office-reportSummary { margin-top: 10px; font-size: 12px; }
+.office-reportSummary p { margin: 0; }
+.office-reportSummary details, .office-jobHistory { margin-top: 8px; }
+.office-reportSummary summary, .office-jobHistory summary { font-size: 11px; cursor: pointer; color: #3f5a4c; }
+.office-reportSummary .office-repairReport { margin: 10px 0 0; }
+.office-jobHistory ol { margin: 8px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.7; color: var(--muted); }
+.office-eventList { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.office-eventList li { font-size: 11px; line-height: 1.6; color: var(--muted); border-left: 2px solid #e0a58a; padding-left: 10px; }
+.office-eventList strong { display: block; color: var(--ink); font-weight: 600; }
+.office-deskThree { bottom: 27px; right: 6%; width: 42%; height: 170px; }
+.office-deskThree .office-stationArt { height: 134px; }
+.office-smallAvatar { transition: opacity .5s, transform .5s; }
+.office-away { opacity: .15; transform: translateY(-22px) scale(.8); }
+@media (prefers-reduced-motion: reduce) { .office-smallAvatar { transition: none; } }
+@media (max-width: 1000px) { .office-jobDeskGrid { grid-template-columns: 1fr; } }
+@media (max-width: 460px) { .office-deskThree { right: 2%; width: 46%; } }

@@ -164,9 +164,15 @@ function ResultPanel({ result }: { result: LookupResult }) {
   return (
     <article className="flex flex-col gap-4 rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-semibold uppercase text-white">
-          Live result
-        </span>
+        {result.mode === "live" ? (
+          <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-semibold uppercase text-white">
+            Live result
+          </span>
+        ) : (
+          <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-semibold uppercase text-white">
+            Sample · fixture, not live
+          </span>
+        )}
         <span
           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
             found

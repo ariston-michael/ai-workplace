@@ -186,9 +186,11 @@ export interface Candidate {
   url: string | null;
 }
 
+export type LookupMode = "live" | "sample";
+
 export interface LookupResult {
-  /** Always "live" for this route. Samples / simulations must use a different label. */
-  mode: "live";
+  /** "live" = observed on the supplier site via TinyFish; "sample" = fixture data, never observed. */
+  mode: LookupMode;
   partName: string;
   supplier: PublicSupplier;
   match: MatchStatus;
@@ -258,6 +260,8 @@ export interface NormalizeInput {
   steps: number | null;
   durationMs: number;
   checkedAt?: string;
+  /** Defaults to "live". Fixture data must pass "sample". */
+  mode?: LookupMode;
 }
 
 export function normalizeResult(input: NormalizeInput): LookupResult {
@@ -350,10 +354,15 @@ export function normalizeResult(input: NormalizeInput): LookupResult {
     if (n) uncertainties.push(`Agent note: ${n}`);
   }
 
-  uncertainties.push("Stock levels change quickly and may differ by region; this is a point-in-time observation.");
+  const mode = input.mode ?? "live";
+  if (mode === "sample") {
+    uncertainties.unshift("SAMPLE fixture data. Nothing was observed on the supplier's live site and no TinyFish credits were used.");
+  } else {
+    uncertainties.push("Stock levels change quickly and may differ by region; this is a point-in-time observation.");
+  }
 
   return {
-    mode: "live",
+    mode,
     partName,
     supplier: { id: supplier.id, name: supplier.name },
     match,
