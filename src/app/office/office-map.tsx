@@ -44,8 +44,8 @@ function Worker({ hire, jobs, size, arriving, selected, onClick }: {
   const report = movement.kind === "returned";
   const label = report ? "Report ready. Read saved report" : movement.kind === "failed" ? "Returned with an error. View outcome" : movement.kind === "working" ? "Working on a job" : movement.kind === "assigned" ? "Assigned to workstation" : "View worker";
   return <button ref={button} type="button" className="office-mapWalker" data-worker-id={hire.id} data-desk={hire.desk} data-movement={movement.kind}
-    aria-label={`${hire.role}: ${label} · ${CHARACTERS[characterId(hire.profileId)].name}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
-    <PixelCharacter key={movement.eventKey} id={characterId(hire.profileId)} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
+    aria-label={`${hire.role}: ${label} · ${hire.listing?.publisherKind === "community" ? hire.role : CHARACTERS[characterId(hire.profileId)].name}`} aria-pressed={selected} aria-controls="office-panel" onClick={() => onClick(movement.jobId)} title={`${hire.role} · ${label}`}>
+    <PixelCharacter key={movement.eventKey} id={hire.avatarId ?? characterId(hire.profileId)} gesture={movement.kind === "working" ? "work" : report ? "report" : "idle"} />
     {report && <span className="office-mapReportBadge" aria-hidden="true">▤</span>}
     {movement.kind === "failed" && <span className="office-mapReportBadge" aria-hidden="true">!</span>}
     <span className="office-mapWorkerLabel">{hire.role}{report ? " · Report ready" : ""}</span>

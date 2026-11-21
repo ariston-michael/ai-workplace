@@ -9,14 +9,16 @@
 //      workspace's hire or job.
 //   3  workspaces.owner_sub: the Auth0 user (sub) who owns the office.
 //      NULL = unowned (data from before sign-in existed); hidden until claimed.
+//   4  published marketplace listings, immutable hire snapshots and local action reports.
 
+import { MARKETPLACE } from "./catalog.ts";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 
 export type Db = DatabaseSync;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const DEFAULT_WORKSPACE_ID = "default";
 export const DEFAULT_WORKSPACE_NAME = "Default office";
 /** workspace_id used by schema v1 for all rows. */
@@ -158,6 +160,38 @@ function migrateV2toV3(db: Db) {
   `);
 }
 
+/** v3 → v4: published listings, immutable hire snapshots and real local reports. */
+function migrateV3toV4(db: Db, now: number) {
+  db.exec(`CREATE TABLE marketplace_listings (
+    id TEXT PRIMARY KEY,
+    creator_sub TEXT,
+    creator_name TEXT NOT NULL,
+    publisher_kind TEXT NOT NULL CHECK (publisher_kind IN ('company','community')),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    avatar_id TEXT NOT NULL,
+    skills TEXT NOT NULL,
+    hourly_rate_cents INTEGER NOT NULL CHECK (hourly_rate_cents BETWEEN 0 AND 100000),
+    permissions TEXT NOT NULL,
+    action_id TEXT NOT NULL,
+    action_config TEXT,
+    created_at INTEGER NOT NULL,
+    client_request_id TEXT NOT NULL,
+    CHECK ((publisher_kind = 'company' AND creator_sub IS NULL) OR (publisher_kind = 'community' AND creator_sub IS NOT NULL)),
+    UNIQUE (creator_sub, client_request_id)
+  );
+  ALTER TABLE hires ADD COLUMN listing_snapshot TEXT;
+  `);
+  // Preserve all old reports and their foreign keys while adding the local mode.
+  const schema = TABLES_V2.slice(TABLES_V2.indexOf("CREATE TABLE reports ("))
+    .replace("CREATE TABLE reports (", "CREATE TABLE reports_v4 (")
+    .replace("('live', 'sample', 'simulated')", "('live', 'sample', 'simulated', 'local')");
+  db.exec(schema);
+  db.exec("INSERT INTO reports_v4 SELECT * FROM reports; DROP TABLE reports; ALTER TABLE reports_v4 RENAME TO reports;");
+  const insert = db.prepare(`INSERT INTO marketplace_listings VALUES (?, NULL, 'AI Workplace', 'company', ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`);
+  for (const profile of MARKETPLACE) insert.run(profile.id, profile.role, profile.specialty, profile.id === "procurement_researcher" ? "procurement_researcher" : "catalog_assistant", JSON.stringify(profile.skills), profile.hourlyRateCents!, JSON.stringify(profile.permissions), profile.id === "procurement_researcher" ? "supplier_lookup" : "catalog_search", now, profile.id);
+}
+
 /** Bring any database up to SCHEMA_VERSION, one version at a time. Exported for tests. */
 export function migrate(db: Db, file: string, now = Date.now()) {
   let version = userVersion(db);
@@ -185,6 +219,7 @@ export function migrate(db: Db, file: string, now = Date.now()) {
       migrateV2toV3(db);
       version = 3;
     }
+    if (version === 3) { migrateV3toV4(db, now); version = 4; }
     db.prepare("INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").run(
       DEFAULT_WORKSPACE_ID,
       DEFAULT_WORKSPACE_NAME,

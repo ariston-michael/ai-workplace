@@ -107,9 +107,9 @@ test("jobs submitted to the owned office stay there", () => {
 
 // --- migration to v3 ----------------------------------------------------------
 
-test("fresh database is schema v3 with an unowned default office", () => {
-  assert.equal(SCHEMA_VERSION, 3);
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 3);
+test("fresh database has the latest schema with an unowned default office", () => {
+  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 4);
   assert.equal((db.prepare("SELECT owner_sub FROM workspaces WHERE id = 'default'").get() as { owner_sub: string | null }).owner_sub, null);
 });
 
@@ -126,16 +126,16 @@ test("a v2 database keeps all its data, gains owner_sub, and is backed up", () =
   const before = (asV2.prepare("SELECT COUNT(*) AS n FROM jobs").get() as { n: number }).n;
   asV2.close();
   db = openDb(file); // v1 -> v2 -> v3 in one go
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 3);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 4);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE workspace_id = 'default'").get() as { n: number }).n, before);
   db.close();
 
   // Now prove the v2 -> v3 step on its own: downgrade the stamp, drop the column, reopen.
   const raw = new DatabaseSync(file);
-  raw.exec("DROP INDEX workspaces_by_owner; ALTER TABLE workspaces DROP COLUMN owner_sub; PRAGMA user_version = 2;");
+  raw.exec("DROP TABLE marketplace_listings; ALTER TABLE hires DROP COLUMN listing_snapshot; DROP INDEX workspaces_by_owner; ALTER TABLE workspaces DROP COLUMN owner_sub; PRAGMA user_version = 2;");
   raw.close();
   db = openDb(file);
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 3);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 4);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM jobs").get() as { n: number }).n, before);
   assert.equal(getOwnedWorkspace(db, DEFAULT_WORKSPACE_ID, alice.sub), undefined, "still unowned after migration");
   const backups = fs.readdirSync(tmp).filter((f) => f.startsWith(path.basename(file) + ".v2-backup-"));

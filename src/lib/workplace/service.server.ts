@@ -1,3 +1,7 @@
+import { findListing, listListings } from "../marketplace/listings.server.ts";
+import { auditInventory } from "../marketplace/inventory.server.ts";
+import { CSV_MAX_LENGTH } from "../marketplace/types.ts";
+import type { WorkerProfile } from "./catalog.ts";
 // The workplace flow: submit job -> Dispatcher routes -> (approve hire) ->
 // job resumes automatically -> worker runs -> report saved. Every state change
 // is persisted in SQLite and recorded as a job event.
@@ -7,7 +11,6 @@ import {
   DISPATCHER,
   HIRE_DESKS,
   JOB_TYPES,
-  MARKETPLACE,
   SKILLS,
   STAFF,
   STAFF_DESK,
@@ -189,6 +192,7 @@ interface HireRow {
   source: "staff" | "marketplace";
   desk: string;
   hired_at: number;
+  listing_snapshot: string | null;
 }
 
 interface JobRow {
@@ -358,6 +362,7 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
     return fail(400, "UNKNOWN_JOB_TYPE", "Job type must be supplier_lookup or camera_incident.");
   }
   const type = req.type as JobType;
+  if (type === "inventory_audit") return fail(400, "USE_AGENT_ACTION", "Run inventory audits from the hired worker’s profile.");
 
   let input: JobInput;
   let title: string;
@@ -386,7 +391,7 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
     if (existing) return { ok: true as const, jobId: existing.id, runJobIds: [] };
 
     const jobId = deps.newId("job");
-    const decision = routeJob(type, hires(db, ws).map(toMember));
+    const decision = routeJob(type, hires(db, ws).map(toMember), listListings(db));
     db.prepare(
       `INSERT INTO jobs (id, workspace_id, client_request_id, type, title, input, required_skill, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'needs_worker', ?)`,
@@ -435,7 +440,7 @@ export function approveHire(
   req: HireInput,
 ): Result<{ hireId: string; created: boolean; runJobIds: string[] }> {
   if (!getWorkspace(db, ws)) return missingWorkspace(ws);
-  const profile = MARKETPLACE.find((p) => p.id === req.profileId);
+  const profile = findListing(db, req.profileId);
   if (!profile) return fail(400, "UNKNOWN_PROFILE", "That worker is not in the marketplace.");
   if (req.jobId !== undefined && typeof req.jobId !== "string") return fail(400, "INVALID_REQUEST", "jobId must be a string.");
   const jobId = req.jobId as string | undefined;
@@ -462,9 +467,9 @@ export function approveHire(
       if (!desk) return fail(409, "NO_OPEN_DESK", "Every desk is taken.");
       const id = deps.newId("hire");
       db.prepare(
-        `INSERT INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'marketplace', ?, ?)`,
-      ).run(id, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, desk, now);
+        `INSERT INTO hires (id, workspace_id, profile_id, role, skills, hourly_rate_cents, source, desk, hired_at, listing_snapshot)
+         VALUES (?, ?, ?, ?, ?, ?, 'marketplace', ?, ?, ?)`,
+      ).run(id, ws, profile.id, profile.role, JSON.stringify(profile.skills), profile.hourlyRateCents, desk, now, JSON.stringify(profile));
       hire = hires(db, ws).find((h) => h.id === id)!;
       created = true;
       if (job) {
@@ -489,6 +494,30 @@ export function approveHire(
       runJobIds.push(w.id);
     }
     return { ok: true as const, hireId: hire.id, created, runJobIds };
+  });
+}
+
+/** Explicitly run the supported action of this office's immutable hired listing. */
+export function submitAgentJob(db: Db, deps: ServiceDeps, ws: string, hireId: unknown, req: { clientRequestId: unknown; csv: unknown }): Result<{ jobId: string; runJobIds: string[] }> {
+  if (!getWorkspace(db, ws)) return missingWorkspace(ws);
+  if (typeof hireId !== "string") return fail(404, "HIRE_NOT_FOUND", "Worker not found.");
+  const hire = hires(db, ws).find(h => h.id === hireId);
+  if (!hire) return fail(404, "HIRE_NOT_FOUND", "Worker not found.");
+  const profile = hire.listing_snapshot ? JSON.parse(hire.listing_snapshot) as WorkerProfile : null;
+  if (profile?.listing?.supportedAction !== "inventory_audit") return fail(400, "UNSUPPORTED_ACTION", "This hire does not support inventory audits.");
+  if (typeof req.csv !== "string" || !req.csv.trim() || req.csv.length > CSV_MAX_LENGTH) return fail(400, "INVALID_INPUT", `Submit 1–${CSV_MAX_LENGTH} characters of inventory CSV.`);
+  if (typeof req.clientRequestId !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(req.clientRequestId)) return fail(400, "INVALID_REQUEST", "A valid request ID is required.");
+  return transaction(db, () => {
+    const existing = db.prepare("SELECT id FROM jobs WHERE workspace_id = ? AND client_request_id = ?").get(ws, req.clientRequestId as string) as { id: string } | undefined;
+    if (existing) return { ok: true as const, jobId: existing.id, runJobIds: [] };
+    const now = deps.now(), jobId = deps.newId("job");
+    const title = `Inventory audit by ${hire.role}`;
+    db.prepare(`INSERT INTO jobs (id, workspace_id, client_request_id, type, title, input, required_skill, status, hire_id, created_at, assigned_at)
+      VALUES (?, ?, ?, 'inventory_audit', ?, ?, 'inventory_audit', 'queued', ?, ?, ?)`)
+      .run(jobId, ws, req.clientRequestId as string, title, JSON.stringify({ csv: req.csv, request: "Audit this inventory CSV for low stock and calculate restock quantities." }), hire.id, now, now);
+    addEvent(db, jobId, now, "You", "Submitted a private inventory CSV for a local audit.");
+    addEvent(db, jobId, now, DISPATCHER.role, `Needs: Inventory audit. ${hire.role} is hired with the inventory_audit action. Assigned to ${hire.role}.`);
+    return { ok: true as const, jobId, runJobIds: [jobId] };
   });
 }
 
@@ -531,6 +560,14 @@ export async function runJob(db: Db, deps: ServiceDeps, jobId: string): Promise<
             ? `Ambiguous: ${r.candidates.length || "several"} possible listings on ${r.supplier.name}.`
             : `${r.itemName}: ${r.availabilityText ?? r.availability} at ${r.supplier.name}.`;
       body = { type: "supplier_lookup", result: r };
+    } else if (job.type === "inventory_audit" && "csv" in input) {
+      const snapshot = hire.listing_snapshot ? JSON.parse(hire.listing_snapshot) as WorkerProfile : null;
+      if (snapshot?.listing?.supportedAction !== "inventory_audit" || !snapshot.listing.configuration) throw new Error("The hired agent does not support inventory audits.");
+      const result = auditInventory(input.csv, snapshot.listing.configuration);
+      mode = "local";
+      outcome = "audited";
+      summary = `Audited ${result.rowCount} SKUs: ${result.lowStockCount} below minimum; ${result.totalRestockUnits} units to reach the restock target.`;
+      body = { type: "inventory_audit", result, listingName: snapshot.role };
     } else if (job.type === "camera_incident") {
       // The simulated station emits observations for the fault set in the simulator
       // controls. The Inspector's decisions come only from those observations.
@@ -631,11 +668,14 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
     .all(ws) as unknown as { hire_id: string; n: number }[];
 
   const team: HireView[] = hireRows.map((h) => {
-    const profile = findProfile(h.profile_id);
+    const profile = h.listing_snapshot ? JSON.parse(h.listing_snapshot) as WorkerProfile : findListing(db, h.profile_id) ?? findProfile(h.profile_id);
     const active = jobRows.find((j) => j.hire_id === h.id && (j.status === "working" || j.status === "queued"));
     return {
       id: h.id,
       profileId: h.profile_id,
+      avatarId: profile?.avatarId,
+      listing: profile?.listing,
+      permissions: profile?.permissions,
       role: h.role,
       initials: profile?.initials ?? h.role.slice(0, 2).toUpperCase(),
       color: profile?.color ?? "blue",
@@ -690,7 +730,7 @@ export function getState(db: Db, ws: string, procurementMode: LookupMode, now: n
     procurementMode,
     team,
     jobs,
-    marketplace: MARKETPLACE.map((p) => ({ ...p, hired: hireRows.some((h) => h.profile_id === p.id) })),
+    marketplace: listListings(db).map((p) => ({ ...p, hired: hireRows.some((h) => h.profile_id === p.id) })),
     simulator: { cameraFault: getCameraFault(db, ws) },
   };
 }

@@ -1,3 +1,4 @@
+import { listListings, ownListingIds, publishListing } from "../marketplace/listings.server.ts";
 // Wires the workplace service to the real clock, SQLite file and procurement
 // provider (fixture by default), and holds the request handlers shared by
 // /api/workspaces/[workspaceId]/* and the legacy /api/workplace/* aliases.
@@ -24,6 +25,7 @@ import {
   runJob,
   setCameraFault,
   submitRequest,
+  submitAgentJob,
   type ServiceDeps,
   type Viewer,
 } from "./service.server.ts";
@@ -187,4 +189,30 @@ export async function handleReset(ref: WorkspaceRef) {
   const r = resetWorkspace(getDb(), auth.ws, Date.now());
   if (!r.ok) return errorJson(r.status, r.error.code, r.error.message);
   return withState(auth.ws);
+}
+
+
+export async function handleMarketplace(request?: Request) {
+  await connection();
+  const viewer = await requireViewer();
+  if (viewer instanceof Response) return viewer;
+  if (request) {
+    const body = await readObject(request);
+    if (!body) return badBody();
+    const result = publishListing(getDb(), serviceDeps(), viewer, body);
+    if (!result.ok) return errorJson(result.status, result.error.code, result.error.message);
+    return Response.json(result, { status: result.created ? 201 : 200, headers: { "Cache-Control": "no-store" } });
+  }
+  return Response.json({ ok: true, listings: listListings(getDb()), ownListingIds: ownListingIds(getDb(), viewer.sub), viewer: { name: viewer.name ?? "Community creator" } }, { headers: { "Cache-Control": "no-store" } });
+}
+
+export async function handleAgentJob(request: Request, ref: WorkspaceRef, hireId: string) {
+  const auth = await authorize(ref);
+  if (auth instanceof Response) return auth;
+  const body = await readObject(request);
+  if (!body) return badBody();
+  const result = submitAgentJob(getDb(), serviceDeps(), auth.ws, hireId, { clientRequestId: body.clientRequestId, csv: body.csv });
+  if (!result.ok) return errorJson(result.status, result.error.code, result.error.message);
+  scheduleJobs(result.runJobIds);
+  return withState(auth.ws, { jobId: result.jobId });
 }

@@ -1,3 +1,4 @@
+import type { InventoryAuditResult } from "../marketplace/types.ts";
 // Shapes returned by /api/workplace and rendered by /office.
 
 import type { JobType, SkillId, WorkerProfile } from "./catalog.ts";
@@ -5,14 +6,16 @@ import type { LookupMode, LookupResult } from "../procurement.ts";
 import type { Incident } from "../camera-incident.ts";
 
 export type JobStatus = "needs_worker" | "queued" | "working" | "completed" | "failed";
-export type ReportMode = "live" | "sample" | "simulated";
-export type ReportOutcome = "found" | "close" | "ambiguous" | "not_found" | "resolved" | "incident_open";
+export type ReportMode = "live" | "sample" | "simulated" | "local";
+export type ReportOutcome = "found" | "close" | "ambiguous" | "not_found" | "resolved" | "incident_open" | "audited";
 
 export type JobInput =
   | { partName: string; supplierId: string; supplierName: string; request?: string }
-  | { station: string; request?: string };
+  | { station: string; request?: string }
+  | { csv: string; request?: string };
 
 export type ReportBody =
+  | { type: "inventory_audit"; result: InventoryAuditResult; listingName: string }
   | { type: "supplier_lookup"; result: LookupResult }
   | {
       type: "camera_incident";
@@ -24,6 +27,9 @@ export type ReportBody =
 export interface HireView {
   id: string;
   profileId: string;
+  avatarId?: WorkerProfile["avatarId"];
+  listing?: WorkerProfile["listing"];
+  permissions?: string[];
   role: string;
   initials: string;
   color: WorkerProfile["color"];
