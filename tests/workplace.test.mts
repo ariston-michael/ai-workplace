@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openDb, type Db } from "../src/lib/workplace/db.server.ts";
+import { DEFAULT_WORKSPACE_ID, openDb, type Db } from "../src/lib/workplace/db.server.ts";
 import {
   approveHire,
   getState,
@@ -30,7 +30,7 @@ after(() => {
   globalThis.fetch = realFetch;
 });
 
-const WS = "test";
+const WS = DEFAULT_WORKSPACE_ID;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "workplace-test-"));
 let db: Db;
 let dbFile: string;
@@ -50,7 +50,7 @@ const deps: ServiceDeps = {
 
 let requestCounter = 0;
 const rid = () => `req-${++requestCounter}-abcdef`;
-const state = () => getState(db, WS, "sample", clock);
+const state = () => getState(db, WS, "sample", clock)!;
 const job = (id: string) => state().jobs.find((j) => j.id === id)!;
 
 beforeEach(() => {

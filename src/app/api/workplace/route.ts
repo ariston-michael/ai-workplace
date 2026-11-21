@@ -1,7 +1,7 @@
-import { connection } from "next/server";
-import { currentState } from "@/lib/workplace/runtime.server";
+import { DEFAULT_WORKSPACE_ID } from "@/lib/workplace/db.server";
+import { handleGetState } from "@/lib/workplace/runtime.server";
 
-export async function GET() {
-  await connection(); // always read the database at request time
-  return Response.json({ ok: true, state: currentState() });
+/** Legacy alias for GET /api/workspaces/default. */
+export function GET() {
+  return handleGetState(DEFAULT_WORKSPACE_ID);
 }

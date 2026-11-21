@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import "./office.css";
 import { CameraIncidentReport } from "./repair-incident";
 import { SCENARIOS } from "@/lib/camera-incident";
@@ -13,7 +14,10 @@ import {
   formatRate,
   type WorkerProfile,
 } from "@/lib/workplace/catalog";
-import type { HireView, JobStatus, JobView, ReportMode, WorkplaceState } from "@/lib/workplace/types";
+import type { HireView, JobStatus, JobView, ReportMode, WorkplaceState, WorkspaceSummary } from "@/lib/workplace/types";
+
+const DEFAULT_WORKSPACE = "default";
+const apiBase = (ws: string) => `/api/workspaces/${encodeURIComponent(ws)}`;
 
 type Selection = null | "dispatcher" | { hireId: string } | { desk: string };
 
@@ -76,7 +80,65 @@ async function api(path: string, body?: unknown): Promise<{ ok: true; state: Wor
   }
 }
 
+/** Reads ?workspace= and renders that office. Keyed so switching offices starts from clean state. */
 export default function Office() {
+  const params = useSearchParams();
+  const ws = params.get("workspace") || DEFAULT_WORKSPACE;
+  return <OfficeView key={ws} workspaceId={ws} />;
+}
+
+function OfficeSwitcher({ current, currentName }: { current: string; currentName?: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [offices, setOffices] = useState<WorkspaceSummary[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/workspaces", { cache: "no-store" }).then(r => r.json()).then(r => { if (!cancelled && r.ok) setOffices(r.workspaces); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [current]);
+
+  const go = (id: string) => router.push(`${pathname}?workspace=${encodeURIComponent(id)}`);
+
+  async function create(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    const res = await fetch("/api/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).then(r => r.json()).catch(() => null);
+    if (!res?.ok) { setError(res?.error?.message ?? "Could not create the office."); return; }
+    setCreating(false);
+    setName("");
+    go(res.workspace.id);
+  }
+
+  const known = offices.some(o => o.id === current);
+  return (
+    <div className="office-switcher">
+      <label className="office-switcherLabel">
+        <span>Office</span>
+        <select name="workspace" value={current} onChange={e => go(e.target.value)}>
+          {!known && <option value={current}>{currentName ?? current}</option>}
+          {offices.map(o => <option key={o.id} value={o.id}>{o.name} ({o.teamSize} on team · {o.totalJobs} jobs)</option>)}
+        </select>
+      </label>
+      {creating ? (
+        <form className="office-newOffice" onSubmit={create}>
+          <input name="officeName" aria-label="New office name" placeholder="Office name" value={name} maxLength={60} required autoFocus onChange={e => setName(e.target.value)} />
+          <button type="submit" className="office-reset">Create</button>
+          <button type="button" className="office-reset" onClick={() => { setCreating(false); setError(null); }}>Cancel</button>
+          {error && <span className="office-errorText" role="alert">{error}</span>}
+        </form>
+      ) : (
+        <button type="button" className="office-reset" onClick={() => setCreating(true)}>New office <span aria-hidden="true">+</span></button>
+      )}
+    </div>
+  );
+}
+
+function OfficeView({ workspaceId }: { workspaceId: string }) {
+  const base = apiBase(workspaceId);
   const [state, setState] = useState<WorkplaceState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -84,18 +146,18 @@ export default function Office() {
   const panelHeading = useRef<HTMLHeadingElement>(null);
 
   const refresh = useCallback(async () => {
-    const r = await api("/api/workplace");
+    const r = await api(base);
     if (r.ok) { setState(r.state); setLoadError(null); } else setLoadError(r.error.message);
-  }, []);
+  }, [base]);
 
   useEffect(() => {
     let cancelled = false;
-    api("/api/workplace").then(r => {
+    api(base).then(r => {
       if (cancelled) return;
       if (r.ok) setState(r.state); else setLoadError(r.error.message);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [base]);
 
   // Poll while any job is assigned or running.
   const busy = state?.jobs.some(j => j.status === "queued" || j.status === "working") ?? false;
@@ -129,13 +191,13 @@ export default function Office() {
   }
 
   async function setFault(cameraFault: string) {
-    const r = await api("/api/workplace/simulator", { cameraFault });
+    const r = await api(`${base}/simulator`, { cameraFault });
     if (r.ok) { setState(r.state); setAnnouncement(`SIMULATED camera fault set: ${SCENARIOS.find(sc => sc.id === cameraFault)?.title}.`); }
     else setAnnouncement(r.error.message);
   }
 
   async function hire(profileId: string, jobId?: string) {
-    const r = await api("/api/workplace/hires", { profileId, jobId });
+    const r = await api(`${base}/hires`, { profileId, jobId });
     if (!r.ok) { setAnnouncement(r.error.message); return; }
     setState(r.state);
     const h = r.state.team.find(t => t.profileId === profileId);
@@ -144,9 +206,11 @@ export default function Office() {
   }
 
   async function resetDemo() {
-    if (!window.confirm("Reset the demo? This deletes saved hires, jobs and reports.")) return;
-    const r = await api("/api/workplace/reset", {});
-    if (r.ok) { setState(r.state); setSelection(null); setAnnouncement("Demo reset. Only the Quality Inspector remains on the team."); }
+    const officeName = state?.workspace.name ?? workspaceId;
+    if (!window.confirm(`Reset “${officeName}”? This deletes this office’s hires, jobs, reports and simulator settings. Other offices are not affected.`)) return;
+    const r = await api(`${base}/reset`, {});
+    if (r.ok) { setState(r.state); setSelection(null); setAnnouncement(`${officeName} reset. Only the Quality Inspector remains on the team.`); }
+    else setAnnouncement(r.error.message);
   }
 
   function select(next: Selection) {
@@ -165,6 +229,7 @@ export default function Office() {
     <main className="office-office">
       <header className="office-header">
         <a className="office-brand" href="/office"><span className="office-logo" aria-hidden="true">a<span>i</span></span> AI Workplace</a>
+        <OfficeSwitcher current={workspaceId} currentName={state?.workspace.name} />
         <div className="office-headerBadges">
           {state && (state.procurementMode === "live"
             ? <span className="office-demoBadge office-liveBadge"><span /> PROCUREMENT: LIVE TINYFISH</span>
@@ -175,15 +240,15 @@ export default function Office() {
 
       <div className="office-workspace">
         <div className="office-pageHeading">
-          <div><p className="office-eyebrow">WORKSPACE / OFFICE 01</p><h1>A little space. A capable team.</h1><p>Give the Dispatcher a job. It checks your team’s skills, assigns a qualified worker, or recommends a hire.</p></div>
-          <button className="office-reset" type="button" onClick={resetDemo}>Reset demo <span aria-hidden="true">↺</span></button>
+          <div><p className="office-eyebrow">WORKSPACE / {(state?.workspace.name ?? workspaceId).toUpperCase()}</p><h1>A little space. A capable team.</h1><p>Give the Dispatcher a job. It checks your team’s skills, assigns a qualified worker, or recommends a hire.</p></div>
+          <button className="office-reset" type="button" onClick={resetDemo}>Reset this office <span aria-hidden="true">↺</span></button>
         </div>
 
         {loadError && <p className="office-errorText" role="alert">{loadError}</p>}
 
         <section className="office-incident office-jobDesk" aria-labelledby="jobs-title">
           <div className="office-jobDeskGrid">
-            <RequestForm onReply={onRequestReply} disabled={!state} />
+            <RequestForm base={base} onReply={onRequestReply} disabled={!state} />
             <div>
               <h2 id="jobs-title" className="office-jobsTitle">Jobs and reports</h2>
               {!state ? <p className="office-muted">Loading saved workspace…</p>
@@ -282,7 +347,7 @@ const EXAMPLES = [
   "I need a replacement part",
 ];
 
-function RequestForm({ onReply, disabled }: { onReply: (reply: RequestReply) => void; disabled: boolean }) {
+function RequestForm({ base, onReply, disabled }: { base: string; onReply: (reply: RequestReply) => void; disabled: boolean }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Extract<RequestReply, { kind: "follow_up" }>["pending"] | null>(null);
   const [reply, setReply] = useState<{ tone: "info" | "unsupported" | "error"; text: string } | null>(null);
@@ -304,7 +369,7 @@ function RequestForm({ onReply, disabled }: { onReply: (reply: RequestReply) => 
     requestId.current ??= newRequestId();
     let r: RequestReply;
     try {
-      const res = await fetch("/api/workplace/jobs", {
+      const res = await fetch(`${base}/jobs`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientRequestId: requestId.current, request: text, pending: pending ?? undefined }),
       });

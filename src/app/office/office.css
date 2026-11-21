@@ -239,3 +239,14 @@
 .office-simNote { color: #5b3fa6; }
 .office-visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 1000px) { .office-simControls { grid-template-columns: 1fr; } .office-faults { grid-template-columns: 1fr; } }
+
+/* --- Office (workspace) switcher --- */
+.office-header { gap: 16px; }
+.office-switcher { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-right: auto; margin-left: 28px; }
+.office-switcherLabel { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: 1.3px; font-weight: 650; color: var(--muted); text-transform: uppercase; }
+.office-switcher select, .office-newOffice input { font: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--ink); padding: 8px 10px; border: 1px solid #cdd4c5; background: #fdfdf8; border-radius: 7px; max-width: 280px; }
+.office-switcher select:focus-visible, .office-newOffice input:focus-visible { outline: 3px solid #a34f2e; outline-offset: 2px; }
+.office-newOffice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.office-newOffice .office-errorText { margin: 0; }
+.office-loading { padding: 40px; font-size: 13px; color: #66736b; }
+@media (max-width: 780px) { .office-header { height: auto; flex-wrap: wrap; padding: 14px 20px; } .office-switcher { margin-left: 0; order: 3; width: 100%; } }
