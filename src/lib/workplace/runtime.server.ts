@@ -264,7 +264,7 @@ export async function handleAgentJob(request: Request, ref: WorkspaceRef, hireId
   if (auth instanceof Response) return auth;
   const body = await readObject(request);
   if (!body) return badBody();
-  const result = submitAgentJob(getDb(), serviceDeps(), auth.ws, hireId, { clientRequestId: body.clientRequestId, csv: body.csv });
+  const result = submitAgentJob(getDb(), serviceDeps(), auth.ws, hireId, { clientRequestId: body.clientRequestId, csv: body.csv, type: body.type, diff: body.diff, logs: body.logs, healthChecks: body.healthChecks });
   if (!result.ok) return errorJson(result.status, result.error.code, result.error.message);
   scheduleJobs(result.runJobIds);
   return withState(auth.ws, { jobId: result.jobId });

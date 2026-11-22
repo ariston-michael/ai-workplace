@@ -119,7 +119,7 @@ try {
   console.log("\n== Alice publishes an inventory agent with the sprite builder");
   await pageA.goto(base + "/marketplace");
   await pageA.locator(".market-card").first().waitFor();
-  ok(await pageA.locator('.market-card[data-kind="official"] .market-cardTitle .pixel-verified[role="img"]').count() === 2, "official listings show the blue pixel check");
+  ok(await pageA.locator('.market-card[data-kind="official"] .market-cardTitle .pixel-verified[role="img"]').count() === 4, "official listings show the blue pixel check");
   await pageA.getByRole("button", { name: /^Publish agent/ }).click();
   const dlg = pageA.getByRole("dialog", { name: "Publish an agent" });
   await dlg.getByLabel("Character name").fill("Shelf Scout");

@@ -6,6 +6,7 @@ import BrandMark from "../brand-mark";
 import OfficeMap from "./office-map";
 import PixelCharacter, { ListingBadge } from "./pixel-character";
 import InventoryReport from "./inventory-report";
+import SpecialistReport from "./specialist-report";
 import AgentAction from "./agent-action";
 import SmsPanel from "./sms-panel";
 import { CHARACTERS, characterVoice, characterTask, inventoryVoice } from "@/lib/workplace/characters";
@@ -59,6 +60,11 @@ function workerVoice(hire: HireView, job: JobView | undefined, greeting: string 
   if (hire.sprite.kind === "cast" && hire.listingKind !== "community") return characterVoice(hire.sprite.id, job);
   if (hire.skills.includes("inventory_audit")) return job ? inventoryVoice(job) : greeting ?? inventoryVoice();
   const like = hire.skills.includes("supplier_research") ? "procurement_researcher" : hire.skills.includes("camera_diagnostics") ? "quality_inspector" : "catalog_assistant";
+  if (hire.skills.includes("pull_request_review") || hire.skills.includes("deployment_review")) {
+    if (job?.report) return "My read-only review is ready. The evidence and limits are in the report.";
+    if (job?.status === "working" || job?.status === "queued") return "I’m reviewing the submitted text. I won’t make changes.";
+    return greeting ?? hire.specialty;
+  }
   const line = characterVoice(like, job);
   return line === CHARACTERS[like].voice ? greeting ?? hire.specialty : line;
 }
@@ -608,6 +614,7 @@ function DemoMeter({ job, rateCents }: { job: JobView; rateCents: number | null 
 
 function ReportBodyView({ report }: { report: NonNullable<JobView["report"]> }) {
   const body = report.body;
+  if (body.type === "specialist_review") return <SpecialistReport result={body.result} />;
   if (body.type === "inventory_audit") return <InventoryReport result={body.result} />;
   if (body.type === "supplier_lookup") return <SupplierReport result={body.result} />;
   return <>

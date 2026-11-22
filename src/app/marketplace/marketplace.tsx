@@ -1,4 +1,5 @@
 "use client";
+import { REVIEW_ACTIONS, reviewActionFor } from "@/lib/specialists/reviews";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -122,6 +123,7 @@ export default function Marketplace() {
 
       <ul className="market-grid">
         {visible.map(l => {
+          const review = reviewActionFor(l.skills);
           const qualified = skill ? l.skills.includes(skill) : true;
           return <li key={l.id} className="market-card" data-listing-id={l.id} data-kind={l.kind} data-highlight={highlight === l.id || undefined} data-qualified={skill ? qualified : undefined}>
             <div className="market-cardArt"><PixelCharacter sprite={l.sprite} portrait stroll /></div>
@@ -131,10 +133,11 @@ export default function Marketplace() {
               <ListingBadge kind={l.kind} publisher={l.publisher.isYou ? `${l.publisher.name} (you)` : l.publisher.name} />
               <p className="market-specialty">{l.specialty}</p>
               <blockquote className="market-greeting">“{l.greeting}”</blockquote>
+              {review && <><p className="market-action"><strong>Action:</strong> {REVIEW_ACTIONS[review].title} · local rules-based · read-only</p><p className="market-specialty"><strong>Inputs needed:</strong> {REVIEW_ACTIONS[review].inputs}</p></>}
               {l.actionConfig && <p className="market-action"><strong>Action:</strong> Inventory CSV audit · executed locally · low stock below {l.actionConfig.minimumQuantity}, restock to {l.actionConfig.targetQuantity}</p>}
               <ul className="market-skills" aria-label="Skills">{l.skills.map(s => <li key={s} data-match={s === skill || undefined}>{SKILLS[s]}{s === skill ? " ✓" : ""}</li>)}</ul>
               <details className="market-more"><summary>Sample work and permissions</summary>
-                <p><strong>Sample work:</strong> {l.sampleWork}</p>
+                <p><strong>{review ? "Example report:" : "Sample work:"}</strong> {l.sampleWork}</p>
                 <p><strong>Permissions</strong> (set by the platform from the skills):</p>
                 <ul>{l.permissions.map(p => <li key={p}>{p}</li>)}</ul>
               </details>

@@ -1,0 +1,10 @@
+.specialist-report { font-size: 13px; line-height: 1.7; min-width: 0; overflow-wrap: anywhere; }
+.specialist-mode { font-size: 11px; font-weight: 700; color: #1d3f8f; letter-spacing: .4px; }
+.specialist-meta { font-size: 11px; color: #687467; }
+.specialist-report code, .specialist-report pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.specialist-finding { border: 1px solid #dce0d5; padding: 14px; border-radius: 8px; margin: 12px 0; background: #fdfdf8; }
+.specialist-finding h4 { margin-top: 0; }
+.specialist-finding h5 { font-size: 12px; margin-bottom: 6px; }
+.specialist-evidence { padding-left: 20px; }
+.specialist-evidence li { margin-bottom: 9px; }
+.specialist-evidence pre { margin: 4px 0; padding: 8px; background: #edf1e7; border-radius: 4px; }

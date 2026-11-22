@@ -66,8 +66,10 @@ beforeEach(() => {
 
 // --- listing fields and validation --------------------------------------------
 
-test("official listings carry the verified check, a cast sprite and platform permissions", () => {
+test("official listings carry the verified check, an original sprite and platform permissions", () => {
   assert.deepEqual(OFFICIAL_LISTINGS.map((l) => [l.id, l.characterName, l.verified, l.sprite.kind]), [
+    ["software_engineer", "Nia", true, "custom"],
+    ["cloud_infrastructure_engineer", "Ash", true, "custom"],
     ["catalog_assistant", "Kit", true, "cast"],
     ["procurement_researcher", "Ro", true, "cast"],
   ]);
@@ -105,7 +107,7 @@ test("a published agent is visible to every user, credited by name, and never ex
   assert.deepEqual(forBob.publisher, { name: "Bob", isYou: true });
   assert.doesNotMatch(JSON.stringify(listMarketplace(db, alice.sub)), /auth0\|/);
   // Official first, then community.
-  assert.deepEqual(listMarketplace(db).map((l) => l.kind), ["official", "official", "community"]);
+  assert.deepEqual(listMarketplace(db).map((l) => l.kind), ["official", "official", "official", "official", "community"]);
 });
 
 test("publishing is idempotent per request id and capped per publisher", () => {
@@ -249,7 +251,7 @@ test("an inventory agent is published with its thresholds and fixed permissions;
     assert.ok(!bad.ok && bad.error.fields?.actionConfig, JSON.stringify(actionConfig));
   }
   assert.equal(listMarketplace(db).filter((l) => l.kind === "community").length, 1, "rejections publish nothing");
-  assert.equal(listMarketplace(db).filter((l) => l.verified).length, 2, "only the code-defined listings are official");
+  assert.equal(listMarketplace(db).filter((l) => l.verified).length, 4, "only the code-defined listings are official");
 });
 
 test("B hires A's inventory agent and gets a real, private, local audit using hire-time settings", async () => {
@@ -380,9 +382,9 @@ test("a v4 database from marketplace-publishing keeps inventory agents, their hi
   db = openDb(file);
   assert.equal(userVersion(db), SCHEMA_VERSION);
   const listings = listMarketplace(db);
-  assert.deepEqual(listings.map((l) => [l.id, l.verified]), [["catalog_assistant", true], ["procurement_researcher", true], ["agent_1", false]], "company rows become the code-defined official listings");
-  assert.deepEqual(listings[2].actionConfig, { minimumQuantity: 5, targetQuantity: 12 });
-  assert.deepEqual(listings[2].sprite, { kind: "cast", id: "catalog_assistant" }, "the chosen preset avatar becomes the sprite");
+  assert.deepEqual(listings.map((l) => [l.id, l.verified]), [...OFFICIAL_LISTINGS.map(l => [l.id, true]), ["agent_1", false]], "company rows become the code-defined official listings");
+  assert.deepEqual(listings.find(l => l.id === "agent_1")!.actionConfig, { minimumQuantity: 5, targetQuantity: 12 });
+  assert.deepEqual(listings.find(l => l.id === "agent_1")!.sprite, { kind: "cast", id: "catalog_assistant" }, "the chosen preset avatar becomes the sprite");
   const state = getState(db, "south", "sample", 0)!;
   const scout = state.team.find((h) => h.id === "hire_scout")!;
   assert.deepEqual(scout.actionConfig, { minimumQuantity: 5, targetQuantity: 12 });

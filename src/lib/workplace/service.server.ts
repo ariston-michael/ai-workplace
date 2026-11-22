@@ -1,3 +1,5 @@
+import { parseReviewInput, REVIEW_ACTIONS, type ReviewAction } from "../specialists/reviews.ts";
+import { executeReview } from "../specialists/reviews.server.ts";
 // The workplace flow: submit job -> Dispatcher routes -> (approve hire) ->
 // job resumes automatically -> worker runs -> report saved. Every state change
 // is persisted in SQLite and recorded as a job event.
@@ -439,8 +441,8 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
   if (typeof req.clientRequestId !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(req.clientRequestId)) {
     return fail(400, "INVALID_REQUEST", "clientRequestId must be 8–100 letters, digits, '-' or '_'.");
   }
-  if (typeof req.type !== "string" || !(req.type in JOB_TYPES)) {
-    return fail(400, "UNKNOWN_JOB_TYPE", "Job type must be supplier_lookup, camera_incident or inventory_audit.");
+  if (typeof req.type !== "string" || !Object.hasOwn(JOB_TYPES, req.type)) {
+    return fail(400, "UNKNOWN_JOB_TYPE", "Select a supported job type.");
   }
   const type = req.type as JobType;
 
@@ -451,6 +453,10 @@ export function submitJob(db: Db, deps: ServiceDeps, ws: string, req: SubmitInpu
     if (!v.ok) return fail(400, v.error.code, v.error.message);
     input = { partName: v.partName, supplierId: v.supplier.id, supplierName: v.supplier.name, request: req.request };
     title = `Find “${v.partName}” on ${v.supplier.name}`;
+  } else if (type === "pull_request_review" || type === "deployment_review") {
+    try { input = { ...parseReviewInput(type, (req.input ?? {}) as Record<string, unknown>), request: req.request }; }
+    catch (e) { return fail(400, "INVALID_INPUT", (e as Error).message); }
+    title = REVIEW_ACTIONS[type].title;
   } else if (type === "inventory_audit") {
     // Private input: stays in this workspace's job row. Never sent to Gemini or the publisher.
     const csv = (req.input as { csv?: unknown } | null | undefined)?.csv;
@@ -658,26 +664,37 @@ export function updateHire(
   });
 }
 
-/** Run the inventory action of a worker in this office directly from its profile (Codex's flow). */
-export function submitAgentJob(db: Db, deps: ServiceDeps, ws: string, hireId: unknown, req: { clientRequestId: unknown; csv: unknown }): Result<{ jobId: string; runJobIds: string[] }> {
+/** Assign a platform-supported read-only action to this hired worker. */
+export function submitAgentJob(db: Db, deps: ServiceDeps, ws: string, hireId: unknown, req: { clientRequestId: unknown; csv?: unknown; type?: unknown; diff?: unknown; logs?: unknown; healthChecks?: unknown }): Result<{ jobId: string; runJobIds: string[] }> {
   if (!getWorkspace(db, ws)) return missingWorkspace(ws);
   if (typeof hireId !== "string") return fail(404, "HIRE_NOT_FOUND", "Worker not found.");
-  const hire = hires(db, ws).find((h) => h.id === hireId);
+  const hire = hires(db, ws).find(h => h.id === hireId);
   if (!hire) return fail(404, "HIRE_NOT_FOUND", "Worker not found.");
-  if (!snapshot(hire).actionConfig) return fail(400, "UNSUPPORTED_ACTION", "This hire does not support inventory audits.");
   if (hire.retention !== "team") return fail(409, "HIRED_FOR_ONE_JOB", "This worker was hired for one job. Keep it on the team to give it more work.");
-  if (typeof req.csv !== "string" || !req.csv.trim() || req.csv.length > CSV_MAX_LENGTH) return fail(400, "INVALID_INPUT", `Submit 1–${CSV_MAX_LENGTH} characters of inventory CSV.`);
+  const type = req.type ?? "inventory_audit";
+  if (type !== "inventory_audit" && type !== "pull_request_review" && type !== "deployment_review") return fail(400, "UNSUPPORTED_ACTION", "Select an action this worker supports.");
+  const skill = JOB_TYPES[type].requiredSkill;
+  const snap = snapshot(hire);
+  if (!snap.skills.includes(skill) || (type === "inventory_audit" && !snap.actionConfig)) return fail(400, "UNSUPPORTED_ACTION", "This hire does not support this action.");
+  let input: JobInput;
+  if (type === "inventory_audit") {
+    if (typeof req.csv !== "string" || !req.csv.trim() || req.csv.length > CSV_MAX_LENGTH) return fail(400, "INVALID_INPUT", `Submit 1–${CSV_MAX_LENGTH} characters of inventory CSV.`);
+    input = { csv: req.csv, request: "Audit this inventory CSV for low stock and calculate restock quantities." };
+  } else {
+    try { input = { ...parseReviewInput(type, req), request: REVIEW_ACTIONS[type].title }; }
+    catch(e) { return fail(400, "INVALID_INPUT", (e as Error).message); }
+  }
   if (typeof req.clientRequestId !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(req.clientRequestId)) return fail(400, "INVALID_REQUEST", "A valid request ID is required.");
   return transaction(db, () => {
-    const existing = db.prepare("SELECT id FROM jobs WHERE workspace_id = ? AND client_request_id = ?").get(ws, req.clientRequestId as string) as { id: string } | undefined;
-    if (existing) return { ok: true as const, jobId: existing.id, runJobIds: [] };
+    const existing = db.prepare("SELECT id, hire_id FROM jobs WHERE workspace_id = ? AND client_request_id = ?").get(ws, req.clientRequestId as string) as { id: string; hire_id: string } | undefined;
+    if (existing) return existing.hire_id === hire.id ? { ok: true as const, jobId: existing.id, runJobIds: [] } : fail(409, "REQUEST_CONFLICT", "That request ID belongs to another worker.");
     const now = deps.now(), jobId = deps.newId("job");
-    const title = `Inventory audit by ${hire.role}`;
+    const title = `${JOB_TYPES[type].label} by ${hire.role}`;
     db.prepare(`INSERT INTO jobs (id, workspace_id, client_request_id, type, title, input, required_skill, status, hire_id, created_at, assigned_at)
-      VALUES (?, ?, ?, 'inventory_audit', ?, ?, 'inventory_audit', 'queued', ?, ?, ?)`)
-      .run(jobId, ws, req.clientRequestId as string, title, JSON.stringify({ csv: req.csv, request: "Audit this inventory CSV for low stock and calculate restock quantities." }), hire.id, now, now);
-    addEvent(db, jobId, now, "You", "Submitted a private inventory CSV for a local audit.");
-    addEvent(db, jobId, now, DISPATCHER.role, `Needs: Inventory audit. ${hire.role} is on the team with the inventory_audit action. Assigned to ${hire.role}.`);
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`)
+      .run(jobId, ws, req.clientRequestId as string, type, title, JSON.stringify(input), skill, hire.id, now, now);
+    addEvent(db, jobId, now, "You", type === "inventory_audit" ? "Submitted a private inventory CSV for a local audit." : `Submitted private text for ${REVIEW_ACTIONS[type].title.toLowerCase()}. Read-only review; no external access authorized.`);
+    addEvent(db, jobId, now, DISPATCHER.role, `Needs: ${SKILLS[skill]}. ${hire.role} is on the team with the ${skill} action. Assigned to ${hire.role}.`);
     addHireEvent(db, ws, hire.id, now, "assigned", `Assigned: ${title}`, jobId);
     return { ok: true as const, jobId, runJobIds: [jobId] };
   });
@@ -722,6 +739,11 @@ export async function runJob(db: Db, deps: ServiceDeps, jobId: string): Promise<
             ? `Ambiguous: ${r.candidates.length || "several"} possible listings on ${r.supplier.name}.`
             : `${r.itemName}: ${r.availabilityText ?? r.availability} at ${r.supplier.name}.`;
       body = { type: "supplier_lookup", result: r };
+    } else if (job.type === "pull_request_review" || job.type === "deployment_review") {
+      if (!snapshot(hire).skills.includes(JOB_TYPES[job.type as ReviewAction].requiredSkill)) throw Object.assign(new Error("Worker lacks this review skill."), { code: "UNSUPPORTED_ACTION" });
+      const result = executeReview(job.type, input as unknown as Record<string, unknown>);
+      mode = "local"; outcome = "reviewed"; summary = result.summary;
+      body = { type: "specialist_review", result };
     } else if (job.type === "inventory_audit" && "csv" in input) {
       // Real local execution with the thresholds from the hire's snapshot, never from the request.
       const config: InventoryConfig | null = snapshot(hire).actionConfig;

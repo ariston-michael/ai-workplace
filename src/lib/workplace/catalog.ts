@@ -1,8 +1,10 @@
+import { REVIEW_ACTIONS } from "../specialists/reviews.ts";
+
 // Skills, job types and worker profiles for the AI Workplace.
 // Marketplace profiles are product data; a workspace *hire* (stored in SQLite)
 // snapshots the profile's role, skills and rate at hire time.
 
-export type SkillId = "supplier_research" | "camera_diagnostics" | "visual_inspection" | "catalog_search" | "inventory_audit";
+export type SkillId = "supplier_research" | "camera_diagnostics" | "visual_inspection" | "catalog_search" | "inventory_audit" | "pull_request_review" | "deployment_review";
 
 export const SKILLS: Record<SkillId, string> = {
   supplier_research: "Supplier research",
@@ -10,9 +12,11 @@ export const SKILLS: Record<SkillId, string> = {
   visual_inspection: "Visual inspection",
   catalog_search: "Internal catalog search",
   inventory_audit: "Inventory audit",
+  pull_request_review: "Pull request diff review",
+  deployment_review: "Deployment evidence review",
 };
 
-export type JobType = "supplier_lookup" | "camera_incident" | "inventory_audit";
+export type JobType = "supplier_lookup" | "camera_incident" | "inventory_audit" | "pull_request_review" | "deployment_review";
 
 export interface JobTypeInfo {
   label: string;
@@ -22,6 +26,8 @@ export interface JobTypeInfo {
 }
 
 export const JOB_TYPES: Record<JobType, JobTypeInfo> = {
+  pull_request_review: { label: "Review a pull request diff", requiredSkill: "pull_request_review", posting: { deliverable: "Findings with file/line evidence, impact and suggested tests.", allowedSources: "Only the submitted diff; local rules-based review, read-only.", needsApproval: "Hiring and submitting the diff. No repository writes or test execution." } },
+  deployment_review: { label: "Review deployment evidence", requiredSkill: "deployment_review", posting: { deliverable: "Likely cause, cited log evidence, uncertainty and next diagnostic step.", allowedSources: "Only submitted logs and health-check text; read-only.", needsApproval: "Hiring and submitting the evidence. No infrastructure access or changes." } },
   inventory_audit: { label: "Audit inventory CSV", requiredSkill: "inventory_audit", posting: { deliverable: "Low-stock evidence and calculated restock quantities.", allowedSources: "Only the CSV submitted to this job; executed locally.", needsApproval: "Hiring the worker and submitting the inventory CSV." } },
   supplier_lookup: {
     label: "Find a replacement part",
@@ -60,6 +66,14 @@ export interface WorkerProfile {
 
 /** Workers available to hire. */
 export const MARKETPLACE: WorkerProfile[] = [
+  { id: "software_engineer", role: "Software Engineer", initials: "SE", color: "blue",
+    specialty: "Review a pasted pull request diff for supported risk patterns, with file evidence, impact and tests. Local rules-based, read-only.",
+    skills: ["pull_request_review"], hourlyRateCents: 1200, sampleWork: REVIEW_ACTIONS.pull_request_review.example,
+    permissions: ["Reads only the diff submitted to this job", "No repository access, writes, code execution or test execution", "Local rules-based review; no external model"] },
+  { id: "cloud_infrastructure_engineer", role: "Cloud Infrastructure Engineer", initials: "CE", color: "sage",
+    specialty: "Review pasted deployment logs and health-check output for likely causes, evidence and the next diagnostic step. Read-only.",
+    skills: ["deployment_review"], hourlyRateCents: 1400, sampleWork: REVIEW_ACTIONS.deployment_review.example,
+    permissions: ["Reads only logs and health-check text submitted to this job", "No cloud, network, shell or infrastructure access", "Suggests diagnostics; never executes them"] },
   {
     id: "catalog_assistant",
     role: "Catalog Assistant",

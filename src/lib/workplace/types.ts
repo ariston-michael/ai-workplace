@@ -1,3 +1,4 @@
+import type { PullRequestInput, DeploymentInput, ReviewResult } from "../specialists/reviews.ts";
 // Shapes returned by /api/workplace and rendered by /office.
 
 import type { InventoryAuditResult } from "../marketplace/types.ts";
@@ -10,14 +11,17 @@ import type { SpriteSpec } from "./sprites.ts";
 
 export type JobStatus = "needs_worker" | "queued" | "working" | "completed" | "failed";
 export type ReportMode = "live" | "sample" | "simulated" | "local";
-export type ReportOutcome = "found" | "close" | "ambiguous" | "not_found" | "resolved" | "incident_open" | "audited";
+export type ReportOutcome = "found" | "close" | "ambiguous" | "not_found" | "resolved" | "incident_open" | "audited" | "reviewed";
 
 export type JobInput =
+  | PullRequestInput
+  | DeploymentInput
   | { partName: string; supplierId: string; supplierName: string; request?: string }
   | { station: string; request?: string }
   | { csv: string; request?: string };
 
 export type ReportBody =
+  | { type: "specialist_review"; result: ReviewResult }
   | { type: "inventory_audit"; result: InventoryAuditResult; listingName: string }
   | { type: "supplier_lookup"; result: LookupResult }
   | {

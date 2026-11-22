@@ -12,7 +12,8 @@
     "test:marketplace": "node scripts/check-marketplace.mjs",
     "test:sms": "node scripts/check-sms.mjs",
     "test:integration": "npm run test:sms && npm run test:marketplace",
-    "test:navigation": "node scripts/check-navigation.mjs"
+    "test:navigation": "node scripts/check-navigation.mjs",
+    "test:specialists": "node scripts/check-specialists.mjs"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.33.0",

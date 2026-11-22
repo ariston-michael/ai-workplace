@@ -71,13 +71,16 @@ export const OFFICIAL_PUBLISHER = "AI Workplace";
 
 export const OFFICIAL_LISTINGS: MarketplaceListing[] = MARKETPLACE.map((p) => {
   const cast = p.id as keyof typeof CHARACTERS;
+  const engineer = p.id === "software_engineer";
+  const specialist = engineer || p.id === "cloud_infrastructure_engineer";
+  const persona = specialist ? { name: engineer ? "Nia" : "Ash", voice: engineer ? "Show me the diff. I’ll separate evidence from assumptions." : "Let’s line up the logs before we choose a fix." } : CHARACTERS[cast];
   return {
     ...p,
     kind: "official",
     verified: true,
-    characterName: CHARACTERS[cast].name,
-    greeting: CHARACTERS[cast].voice,
-    sprite: castSprite(cast),
+    characterName: persona.name,
+    greeting: persona.voice,
+    sprite: specialist ? { kind: "custom", skin: engineer ? "umber" : "sand", outfit: engineer ? "navy" : "slate", trim: engineer ? "violet" : "teal", hair: engineer ? "bun" : "beanie", hairColor: engineer ? "plum" : "silver", accessory: engineer ? "glasses" : "tablet" } : castSprite(cast),
     publisher: { name: OFFICIAL_PUBLISHER, isYou: false },
     publishedAt: null,
     actionConfig: null,
@@ -91,6 +94,8 @@ const SKILL_PERMISSIONS: Record<SkillId, string[]> = {
   visual_inspection: ["Reads Packing Station 1 camera frames"],
   catalog_search: ["Reads internal catalog records"],
   inventory_audit: INVENTORY_PERMISSIONS,
+  pull_request_review: ["Reads only the submitted diff using local rules", "No repository writes, network, code execution or tests"],
+  deployment_review: ["Reads only submitted deployment logs and health text", "No cloud, network, shell access or infrastructure changes"],
 };
 
 export function permissionsFor(skills: SkillId[]): string[] {

@@ -1,8 +1,10 @@
 "use client";
 import { useRef, useState } from "react";
 import type { HireView, WorkplaceState } from "@/lib/workplace/types";
+import SpecialistAction from "./specialist-action";
+import { REVIEW_ACTIONS, type ReviewAction } from "@/lib/specialists/reviews";
 import { CSV_MAX_LENGTH } from "@/lib/marketplace/types";
-export default function AgentAction({ hire, workspaceId, busy, onRun }: { hire: HireView; workspaceId: string; busy: boolean; onRun: (state: WorkplaceState) => void }) {
+function InventoryAction({ hire, workspaceId, busy, onRun }: { hire: HireView; workspaceId: string; busy: boolean; onRun: (state: WorkplaceState) => void }) {
   const [csv, setCsv] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -31,4 +33,8 @@ export default function AgentAction({ hire, workspaceId, busy, onRun }: { hire: 
     <button className="office-hireButton" type="submit" disabled={submitting || busy || !csv.trim()}>{submitting ? "Assigning…" : busy ? "Audit assigned" : "Run inventory audit"}</button>
     {error && <p className="office-errorText" role="alert">{error}</p>}
   </form>;
+}
+
+export default function AgentAction(props: Parameters<typeof InventoryAction>[0]) {
+  return <><InventoryAction {...props} />{(Object.keys(REVIEW_ACTIONS) as ReviewAction[]).filter(action => props.hire.skills.includes(REVIEW_ACTIONS[action].skill)).map(action => <SpecialistAction key={action} {...props} action={action} />)}</>;
 }
