@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import BrandMark from "../brand-mark";
+import AppHeader from "../app-header";
 import OfficeThumbnail from "./office-thumbnail";
 import "./dashboard.css";
 
@@ -48,9 +48,9 @@ export default function WorkspaceDashboard({ workspaces, loading, error, onRefre
   }
 
   return <main className="workspaces-page">
-    <header className="workspaces-header"><Link href="/" className="workspaces-brand"><BrandMark /> AI Workplace</Link><nav className="workspaces-nav" aria-label="Main"><span className="workspaces-localBadge">YOUR WORKSPACES</span><Link className="workspaces-navLink" href="/marketplace">Marketplace</Link></nav>{viewer && <span className="workspaces-viewer">Signed in as <strong>{viewer}</strong> · <a href="/auth/logout">Log out</a></span>}</header>
+    <AppHeader active="workspaces" viewer={viewer} />
     <div className="workspaces-content">
-      <div className="workspaces-intro"><div><p className="workspaces-eyebrow">A HOME FOR YOUR TEAMS</p><h1>Workspaces</h1><p>A little space for each team. Step into an office, meet your workers, and pick up where the work left off.</p></div><div className="workspaces-introActions"><button className="workspaces-primary" type="button" aria-expanded={creating} aria-controls="workspace-create" onClick={() => { setCreating(value => !value); setCreateError(null); }}>+ New workspace</button><Link className="workspaces-secondary workspaces-marketCta" href="/marketplace">Browse the marketplace ↗</Link></div></div>
+      <div className="workspaces-intro"><div><p className="workspaces-eyebrow">A HOME FOR YOUR TEAMS</p><h1>Workspaces</h1><p>A little space for each team. Step into an office, meet your workers, and pick up where the work left off.</p></div><div className="workspaces-introActions"><button className="workspaces-primary" type="button" aria-expanded={creating} aria-controls="workspace-create" onClick={() => { setCreating(value => !value); setCreateError(null); }}>+ New workspace</button></div></div>
       {creating && <form id="workspace-create" className="workspaces-createForm" onSubmit={create}>
         <label htmlFor="workspace-name">Workspace name<input id="workspace-name" name="name" required maxLength={60} value={name} onChange={event => setName(event.target.value)} placeholder="Name your workspace" /></label>
         <button className="workspaces-primary" type="submit" disabled={submitting || !name.trim()}>{submitting ? "Creating…" : "Create workspace"}</button>

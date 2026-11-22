@@ -6,7 +6,7 @@
 //   npm run build && npm run test:sms
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createServer as createNetServer } from "node:net";
@@ -134,7 +134,7 @@ try {
   const pageErrors = []; page.on("pageerror", error => pageErrors.push(error.message));
   await page.goto(`${base}/office?workspace=${ws}`);
   await page.locator(`.office-jobCard[data-job-id="${state.jobs[0].id}"]`).waitFor();
-  ok(await page.locator(".office-office").getAttribute("data-preview-branch") === "sms-office-integration", "testing the SMS + retro integration build");
+  ok(await page.locator(".office-office").getAttribute("data-preview-branch") === JSON.parse(readFileSync(path.join(root, ".next/required-server-files.json"), "utf8")).config.env.NEXT_PUBLIC_PREVIEW_BRANCH, "office identifies the production build branch");
   ok(await page.locator(".office-pixelMap").evaluate(el => getComputedStyle(el).backgroundColor === "rgb(69, 169, 225)"), "the observed office is the blue tiled redesign");
   let releasePoll;
   const pollGate = new Promise(resolve => { releasePoll = resolve; });

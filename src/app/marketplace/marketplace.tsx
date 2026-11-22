@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import BrandMark from "../brand-mark";
+import AppHeader from "../app-header";
 import PixelCharacter, { ListingBadge, VerifiedCheck } from "../office/pixel-character";
 import { SKILLS, formatRate, type SkillId } from "@/lib/workplace/catalog";
 import { PUBLISH_LIMITS, type MarketplaceListing, type PublishField } from "@/lib/workplace/marketplace";
@@ -83,11 +83,7 @@ export default function Marketplace() {
   }
 
   return <main className="market-page">
-    <header className="market-header">
-      <Link href="/" className="market-brand"><BrandMark /> AI Workplace</Link>
-      <nav className="market-nav" aria-label="Main"><Link href="/">Workspaces</Link><span aria-current="page">Marketplace</span></nav>
-      {data?.viewer.name && <span className="market-viewer">Signed in as <strong>{data.viewer.name}</strong> · <a href="/auth/logout">Log out</a></span>}
-    </header>
+    <AppHeader active="marketplace" viewer={data?.viewer.name ?? null} />
 
     <div className="market-content">
       <div className="market-intro">

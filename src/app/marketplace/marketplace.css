@@ -4,14 +4,6 @@
 .market-page button { cursor: pointer; }
 .market-page :is(a, button, input, textarea, summary):focus-visible { outline: 3px solid #a34f2e; outline-offset: 3px; }
 .market-loading { padding: 40px; font-family: var(--font-geist-sans), Arial, sans-serif; }
-.market-header { display: flex; align-items: center; gap: 24px; padding: 22px 4%; border-bottom: 1px solid var(--m-line); flex-wrap: wrap; }
-.market-brand { display: flex; gap: 11px; align-items: center; color: inherit; font-weight: 650; font-size: 20px; letter-spacing: -.5px; text-decoration: none; }
-.market-nav { display: flex; gap: 6px; font-size: 12px; font-weight: 600; }
-.market-nav > * { padding: 8px 12px; border-radius: 24px; color: inherit; text-decoration: none; border: 1px solid transparent; }
-.market-nav a:hover { border-color: #cdd5c3; }
-.market-nav [aria-current] { background: #2e493e; color: #f7f8ed; }
-.market-viewer { margin-left: auto; font-size: 12px; color: var(--m-muted); }
-.market-viewer a { color: inherit; }
 .market-content { max-width: 1440px; margin: auto; padding: 40px 4% 28px; }
 .market-eyebrow { font-size: 10px; letter-spacing: 1.6px; font-weight: 650; color: var(--m-muted); margin: 0 0 10px; }
 .market-intro { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
@@ -105,7 +97,6 @@
 @media (max-width: 760px) {
   .market-intro, .market-context { flex-direction: column; align-items: flex-start; }
   .market-publishGrid { grid-template-columns: 1fr; }
-  .market-viewer { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .market-page .office-character .office-pose { animation: none !important; visibility: hidden; } .market-page .office-character .office-pose-0 { visibility: visible; } }
 .market-thresholds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
